@@ -30,6 +30,7 @@ export function defaultSource(type) {
   switch (type) {
     case 'magnet':   return { ...base, name: 'Bar magnet',    size: [10, 10, 20], Br: 1.30 };
     case 'cylinder': return { ...base, name: 'Disc magnet',   dia: 12, len: 6,   Br: 1.30, seg: 48 };
+    case 'sphere':   return { ...base, name: 'Sphere magnet', dia: 12, Br: 1.30 };
     case 'coil':     return { ...base, name: 'Electromagnet', dia: 20, len: 30,  turns: 200, current: 2.0, seg: 28, core: 1 };
     case 'loop':     return { ...base, name: 'Current loop',  dia: 20, current: 10, seg: 96 };
     case 'wire':     return { ...base, name: 'Straight wire', len: 60, current: 20 };
@@ -111,6 +112,16 @@ export function sourceField(s, Q) {
     const half = [mm(s.size[0]) / 2, mm(s.size[1]) / 2, mm(s.size[2]) / 2];
     const bLoc = P.cuboidFieldLocal(qLoc, half, [0, 0, s.Br]); // magnetised along local +z
     B = P.matVec(s._R, bLoc);
+  } else if (s.type === 'sphere') {
+    // Uniformly magnetised sphere: EXACTLY a point dipole outside, and a
+    // uniform field (2/3)·J inside.  Both closed-form, no approximation.
+    const R = mm(s.dia) / 2;
+    if (P.vlen(P.vsub(Q, s._origin)) >= R) {
+      const mmag = (s.Br / P.MU0) * (4 / 3) * Math.PI * R * R * R;
+      B = P.dipoleField(P.matVec(s._R, [0, 0, mmag]), s._origin, Q);
+    } else {
+      B = P.matVec(s._R, [0, 0, (2 / 3) * s.Br]);
+    }
   } else if (s.type === 'dipole') {
     const m = P.matVec(s._R, [0, 0, s.moment]); // moment along local +z
     B = P.dipoleField(m, s._origin, Q);
@@ -190,6 +201,10 @@ export function momentOf(s) {
     const r = mm(s.dia) / 2, V = Math.PI * r * r * mm(s.len);
     const m = s.Br / P.MU0 * V;
     return P.matVec(s._R, [0, 0, m]);
+  }
+  if (s.type === 'sphere') {
+    const R = mm(s.dia) / 2, V = (4 / 3) * Math.PI * R * R * R;
+    return P.matVec(s._R, [0, 0, s.Br / P.MU0 * V]);
   }
   if (s.type === 'dipole') return P.matVec(s._R, [0, 0, s.moment]);
   if (s.type === 'loop') {

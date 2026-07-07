@@ -96,20 +96,24 @@ function drawProbe() {
 function drawLegend() {
   const ctx = renderer.ctx;
   if (!renderer.grid || !renderer.opts.heatmap) return;
-  const x = view.W - 168, y = view.H - 46, w = 150, h = 10;
+  const w = Math.min(150, view.W - 24), h = 9;
+  // self-contained panel, clamped inside the canvas so it can't be clipped
+  const pad = 8, panelW = w + pad * 2, panelH = h + 30;
+  const px = Math.max(6, view.W - panelW - 10);
+  const py = Math.max(6, view.H - panelH - 10);
+  const x = px + pad, gy = py + 18;
+  ctx.fillStyle = 'rgba(10,12,18,0.66)';
+  ctx.beginPath(); ctx.roundRect(px, py, panelW, panelH, 6); ctx.fill();
+  ctx.fillStyle = '#cdd3dd'; ctx.font = '10px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('|B| (log)', x, py + 12);
   const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-  for (let i = 0; i <= 10; i++) {
-    const c = renderer.grid ? viridisCss(i / 10) : '#000';
-    grad.addColorStop(i / 10, c);
-  }
-  ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.strokeRect(x, y, w, h);
-  ctx.fillStyle = '#cdd3dd'; ctx.font = '10px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText(fmtFieldShort(Math.pow(10, renderer.range.min)), x, y + h + 2);
+  for (let i = 0; i <= 10; i++) grad.addColorStop(i / 10, viridisCss(i / 10));
+  ctx.fillStyle = grad; ctx.fillRect(x, gy, w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.strokeRect(x, gy, w, h);
+  ctx.fillStyle = '#cdd3dd'; ctx.textBaseline = 'top';
+  ctx.fillText(fmtFieldShort(Math.pow(10, renderer.range.min)), x, gy + h + 2);
   ctx.textAlign = 'right';
-  ctx.fillText(fmtFieldShort(Math.pow(10, renderer.range.max)), x + w, y + h + 2);
-  ctx.textAlign = 'center';
-  ctx.fillText('|B| (log)', x + w / 2, y - 12);
+  ctx.fillText(fmtFieldShort(Math.pow(10, renderer.range.max)) + ' ' + fieldUnit, x + w, gy + h + 2);
 }
 function fmtFieldShort(t) { const v = t * UNITS[fieldUnit]; return v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toPrecision(2); }
 import { viridis } from './render.js';
@@ -178,6 +182,11 @@ const paramDefs = {
     ['Remanence Br (T)', 'Br', 0.1, 1.6, 0.01],
     ['Diameter (mm)', 'dia', 1, 100, 0.5],
     ['Length (mm)', 'len', 1, 100, 0.5],
+  ],
+  sphere: [
+    ['Material', 'material'],
+    ['Remanence Br (T)', 'Br', 0.1, 1.6, 0.01],
+    ['Diameter (mm)', 'dia', 1, 100, 0.5],
   ],
   coil: [
     ['Diameter (mm)', 'dia', 2, 120, 0.5],
@@ -379,10 +388,21 @@ function fitView() {
   invalidateField();
 }
 
+// Pointer events unify mouse/touch/pen: one-finger drags an object or pans,
+// two fingers pinch-zoom (also works with a mouse via the wheel / zoom buttons).
 let dragMode = null, dragStart = null, dragObjStart = null, probeHover = null;
-canvas.addEventListener('mousedown', (e) => {
-  const r = canvas.getBoundingClientRect();
-  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+const pointers = new Map();
+let pinch = null;
+const localXY = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  const [sx, sy] = localXY(e); pointers.set(e.pointerId, [sx, sy]);
+  if (pointers.size === 2) {                       // begin pinch
+    const p = [...pointers.values()];
+    pinch = { dist: Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) || 1, span: view.spanU };
+    dragMode = null; return;
+  }
   const hit = pickSource(sx, sy);
   if (hit && !e.shiftKey) {
     if (hit.id !== selectedId) { selectedId = hit.id; buildList(); buildInspector(); }
@@ -395,9 +415,20 @@ canvas.addEventListener('mousedown', (e) => {
     canvas.style.cursor = 'grabbing';
   }
 });
-window.addEventListener('mousemove', (e) => {
-  const r = canvas.getBoundingClientRect();
-  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+canvas.addEventListener('pointermove', (e) => {
+  const [sx, sy] = localXY(e);
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [sx, sy]);
+  if (pinch && pointers.size >= 2) {
+    const p = [...pointers.values()];
+    const dist = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) || 1;
+    const mx = (p[0][0] + p[1][0]) / 2, my = (p[0][1] + p[1][1]) / 2;
+    const before = view.toWorld(mx, my);
+    view.spanU = Math.max(0.004, Math.min(4, pinch.span * pinch.dist / dist));
+    const after = view.toWorld(mx, my);
+    view.center[0] += before[view.uAxis] - after[view.uAxis];
+    view.center[1] += before[view.vAxis] - after[view.vAxis];
+    invalidateField(); return;
+  }
   if (dragMode === 'pan') {
     view.center[0] = dragStart[2] - (sx - dragStart[0]) / view.scale;
     view.center[1] = dragStart[3] + (sy - dragStart[1]) / view.scale;
@@ -409,16 +440,21 @@ window.addEventListener('mousemove', (e) => {
     s.pos[view.uAxis] = maybeSnap(dragObjStart[view.uAxis] + du);
     s.pos[view.vAxis] = maybeSnap(dragObjStart[view.vAxis] + dv);
     buildSource(s); invalidateField();               // inspector refreshed on drop
-  } else {
-    // hover probe (cheap: reuse cached field layer)
+  } else if (e.pointerType === 'mouse') {
     probeHover = view.toWorld(sx, sy); probe = probeHover; requestDraw();
     canvas.style.cursor = pickSource(sx, sy) ? 'grab' : 'crosshair';
   }
 });
-window.addEventListener('mouseup', () => {
-  if (dragMode === 'obj') buildInspector();          // sync numeric fields once
-  dragMode = null; canvas.style.cursor = 'crosshair';
-});
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (pointers.size === 0) {
+    if (dragMode === 'obj') buildInspector();        // sync numeric fields once
+    dragMode = null; canvas.style.cursor = 'crosshair';
+  }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
 
 // keyboard: arrow keys nudge the selected object, Delete/Backspace removes it
 window.addEventListener('keydown', (e) => {

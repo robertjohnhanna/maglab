@@ -245,6 +245,7 @@ export class Renderer {
       const sel = s.id === selectedId;
       ctx.save();
       if (s.type === 'magnet') this.drawMagnet(s, sel);
+      else if (s.type === 'sphere') this.drawSphere(s, sel);
       else if (s.type === 'cylinder') this.drawCylinder(s, sel);
       else if (s.type === 'coil') this.drawCoil(s, sel);
       else if (s.type === 'loop') this.drawLoop(s, sel);
@@ -290,6 +291,20 @@ export class Renderer {
     const sp = this.localToScreen(s, [0, 0, -d / 2]);
     ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('N', n[0], n[1]); ctx.fillText('S', sp[0], sp[1]);
+  }
+
+  drawSphere(s, sel) {
+    const ctx = this.ctx;
+    const c = this.view.toScreen(s._origin);
+    const rpx = (s.dia / 2 / 1000) * this.view.scale;
+    const n = this.localToScreen(s, [0, 0, s.dia / 2]);   // N pole (local +z)
+    const sp = this.localToScreen(s, [0, 0, -s.dia / 2]);  // S pole
+    const grad = ctx.createLinearGradient(sp[0], sp[1], n[0], n[1]);
+    grad.addColorStop(0, '#3d6be6'); grad.addColorStop(1, '#e6483d');
+    ctx.beginPath(); ctx.arc(c[0], c[1], rpx, 0, 7);
+    ctx.fillStyle = grad; ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = sel ? '#fff' : 'rgba(0,0,0,0.55)'; ctx.lineWidth = sel ? 2 : 1; ctx.stroke();
+    this.poleLabels(s, s.dia);
   }
 
   drawCylinder(s, sel) {
