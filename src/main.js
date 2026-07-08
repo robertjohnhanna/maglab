@@ -31,6 +31,7 @@ let fieldUnit = 'mT';
 function fmtField(teslas) {
   const val = teslas * UNITS[fieldUnit];
   const a = Math.abs(val);
+  if (a !== 0 && (a < 1e-3 || a >= 1e5)) return `${val.toExponential(2)} ${fieldUnit}`;
   const digits = a >= 100 ? 1 : a >= 1 ? 2 : 3;
   return `${val.toFixed(digits)} ${fieldUnit}`;
 }
@@ -220,7 +221,7 @@ function updateParticleReadout() {
   const { E, B } = scene.EB(p.x);
   const F = P.lorentzForce(p.q, p.v, E, B);
   document.getElementById('partReadout').innerHTML =
-    `<div><b>KE</b> ${eV > 1e3 ? (eV / 1e3).toFixed(1) + ' keV' : eV.toFixed(0) + ' eV'}</div>` +
+    `<div><b>KE</b> ${eV >= 1e6 ? (eV / 1e6).toFixed(2) + ' MeV' : eV >= 1e3 ? (eV / 1e3).toFixed(1) + ' keV' : eV.toFixed(0) + ' eV'}</div>` +
     `<div><b>v</b> ${speed.toExponential(1)} m/s (${(speed / P.C0 * 100).toFixed(1)}% c)</div>` +
     `<div><b>F</b> ${fmtMag(P.vlen(F), 'N')}</div>`;
 }
@@ -499,7 +500,7 @@ canvas.addEventListener('pointerdown', (e) => {
     pinch = { dist: Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) || 1, span: view.spanU };
     dragMode = null; return;
   }
-  if (nearAimTip(sx, sy)) {                         // grab the red shooter tip
+  if (nearAimTip(sx, sy)) {                         // grab the amber aim-arrow tip
     dragMode = 'aim'; setAimTo(sx, sy); canvas.style.cursor = 'grabbing'; requestDraw(); return;
   }
   if (nearProbe(sx, sy)) {                          // grab the field-probe pin
@@ -583,7 +584,7 @@ window.addEventListener('keydown', (e) => {
 // clear-all button
 document.getElementById('clearAll').addEventListener('click', () => {
   scene.sources = []; selectedId = null; particles.length = 0; simRunning = false;
-  document.getElementById('pauseSim').textContent = 'Pause';
+  document.getElementById('pauseSim').textContent = 'Play';
   document.getElementById('partReadout').textContent = 'Launch a particle';
   setRateVisible(); buildList(); buildInspector(); invalidateField();
 });
@@ -602,7 +603,7 @@ function pickSource(sx, sy) {
 }
 
 // ---- particle panel ----------------------------------------------------
-// Launch from the field-probe pin, along the red shooter aim (which stays where
+// Launch from the field-probe pin, along the amber aim arrow (which stays where
 // the user turned it). Falls back to the left of the view when the probe is unset.
 function launchParticle() {
   const type = document.getElementById('pType').value;
@@ -618,11 +619,11 @@ function launchParticle() {
 document.getElementById('launch').addEventListener('click', launchParticle);
 document.getElementById('clearParts').addEventListener('click', () => {
   particles.length = 0; simRunning = false;
-  document.getElementById('pauseSim').textContent = 'Pause';
+  document.getElementById('pauseSim').textContent = 'Play';
   document.getElementById('partReadout').textContent = 'Launch a particle'; setRateVisible(); requestDraw();
 });
 document.getElementById('pauseSim').addEventListener('click', (e) => {
-  simRunning = !simRunning; e.target.textContent = simRunning ? 'Pause' : 'Resume';
+  simRunning = !simRunning; e.target.textContent = simRunning ? 'Pause' : 'Play';
   setRateVisible();
   if (simRunning) requestFrame();
 });
@@ -689,7 +690,7 @@ for (const name of Object.keys(presets)) presetSel.innerHTML += `<option value="
 presetSel.addEventListener('change', () => {
   if (!presets[presetSel.value]) return;
   particles.length = 0; simRunning = false;
-  document.getElementById('pauseSim').textContent = 'Pause';
+  document.getElementById('pauseSim').textContent = 'Play';
   setRateVisible();
   presets[presetSel.value]();
   scene.rebuild(); selectedId = scene.sources[0] ? scene.sources[0].id : null;

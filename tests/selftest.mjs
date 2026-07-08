@@ -2,8 +2,9 @@
 // analytically-known limits and Maxwell constraints (∇·B=0, ∇×B=0 in free space).
 import {
   MU0, cuboidFieldZ, cuboidFieldLocal, segmentField, polylineField,
-  dipoleField, vadd, vsub, vscale, vlen, vcross,
+  circularLoopField, dipoleField, borisStep, vadd, vsub, vscale, vlen, vcross,
 } from '../src/physics.js';
+import { Scene, defaultSource, forceOn, momentOf } from '../src/sources.js';
 
 let passed = 0, failed = 0;
 function check(name, cond, extra = '') {
@@ -128,7 +129,18 @@ console.log('\n== Circular loop — elliptic-integral form ==');
           `E=${bE.map((v)=>v.toExponential(2))} S=${bS.map((v)=>v.toExponential(2))}`);
   }
 }
-import { circularLoopField } from '../src/physics.js';
+
+console.log('\n== Solenoid (loop stack) ==');
+{
+  // A long air-core solenoid's centre field is B ≈ μ0·n·I (with the finite-
+  // length correction L/√(L²+D²) ≈ 0.995 at L/D = 10).
+  const sol = defaultSource('coil'); sol.dia = 20; sol.len = 200; sol.turns = 1000; sol.current = 2; sol.core = 1;
+  const sc = new Scene(); sc.add(sol);
+  const Bc = sc.B([0, 0, 0]);
+  const expect = MU0 * (sol.turns / 0.2) * sol.current;
+  check('long solenoid centre ≈ μ0 n I', rel(Bc[2], expect) < 2e-2, `${Bc[2]} vs ${expect}`);
+  check('solenoid centre field is axial', Math.hypot(Bc[0], Bc[1]) / Math.abs(Bc[2]) < 1e-9, Bc.toString());
+}
 
 console.log('\n== Point dipole ==');
 {
@@ -181,8 +193,18 @@ console.log('\n== Exact force / torque ==');
   const scaleF = 0.13 * vlen(uni.B(mg._origin)) / 0.006;   // characteristic force scale
   check('uniform field ⇒ ~zero net force', vlen(fu.F) / scaleF < 1e-2, vlen(fu.F));
   check('uniform field ⇒ nonzero torque', vlen(fu.tau) > 0, vlen(fu.tau));
+
+  // Coaxial current loops: co-directed currents attract, opposed currents repel.
+  const mkLoops = (I2) => {
+    const s2 = new Scene();
+    const l1 = defaultSource('loop'); l1.dia = 30; l1.current = 10; l1.pos = [0, 0, -10]; s2.add(l1);
+    const l2 = defaultSource('loop'); l2.dia = 30; l2.current = I2; l2.pos = [0, 0, 10]; s2.add(l2);
+    return forceOn(s2, l2);
+  };
+  const fPar = mkLoops(10), fAnti = mkLoops(-10);
+  check('parallel co-current loops attract', fPar.F[2] < 0, fPar.F.toString());
+  check('anti-parallel current loops repel', fAnti.F[2] > 0, fAnti.F.toString());
 }
-import { Scene, defaultSource, forceOn, momentOf } from '../src/sources.js';
 
 console.log('\n== Boris pusher (charged particle) ==');
 {
@@ -206,7 +228,6 @@ console.log('\n== Boris pusher (charged particle) ==');
   check('speed conserved (magnetic force does no work)', (maxSpeed - minSpeed) / v0 < 1e-6,
         `Δv/v=${((maxSpeed - minSpeed) / v0).toExponential(2)}`);
 }
-import { borisStep } from '../src/physics.js';
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

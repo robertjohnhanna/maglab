@@ -10,7 +10,7 @@ real Lorentz force.
 No installation, no accounts, no lab equipment — just open the page. Works on
 desktop and touch devices.
 
-👉 **[Live demo](https://robertjohnhanna.github.io/magnetics/)**
+👉 **[Live demo](https://robertjohnhanna.github.io/maglab/)**
 
 ## Why it's trustworthy
 
@@ -31,7 +31,7 @@ independent analytical limit:
 Run the checks yourself:
 
 ```bash
-npm test        # 17 physics assertions, all from first principles
+npm test        # 36 physics assertions, all from first principles
 ```
 
 Full derivations, formulas and references: **[docs/PHYSICS.md](docs/PHYSICS.md)**.
@@ -68,6 +68,8 @@ the right. (On a phone the canvas becomes the hero and the panels stack below.)
   when **Snap** is on), **Delete** removes it.
 - Add sources from the palette; tune every parameter in the inspector; toggle
   visibility or delete from the object list.
+- **Launch** electrons or protons from the ⊕ probe (drag the amber arrow tip to
+  aim); a particle that flies into a solid magnet body stops at the impact point.
 
 ## Running locally
 
@@ -86,7 +88,7 @@ on that protocol.)
 1. Push to GitHub (this repo).
 2. **Settings → Pages → Build and deployment → Source: Deploy from a branch**.
 3. Pick the branch and the `/ (root)` folder, then save.
-4. The site appears at `https://<user>.github.io/magnetics/` within a minute.
+4. The site appears at `https://<user>.github.io/maglab/` within a minute.
 
 There is no build step; the files are served as-is.
 
