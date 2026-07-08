@@ -314,10 +314,14 @@ function updateForceTile() {
   const ft = scene.forceTorque(s);
   if (!ft || !ft.hasExternal) { el.innerHTML = '<div>Net force needs</div><div class="hint">a second source</div>'; return; }
   if (!ft.valid) { el.innerHTML = '<div>Objects overlap</div><div class="hint">separate to read force</div>'; return; }
-  const Fm = P.vlen(ft.F);
+  // A net result far below the sum of contribution magnitudes is numerical
+  // cancellation to zero, not a measurement — show "≈ 0" rather than noise.
+  const Fm = P.vlen(ft.F), tauM = P.vlen(ft.tau);
+  const fZero = ft.Fabs > 0 && Fm / ft.Fabs < 1e-7;
+  const tZero = ft.tauAbs > 0 && tauM / ft.tauAbs < 1e-7;
   el.innerHTML =
-    `<div><b>F</b> ${fmtMag(Fm, 'N')} ${Fm > 0 ? dirArrow(ft.F) : ''}</div>` +
-    `<div><b>τ</b> ${fmtMag(P.vlen(ft.tau), 'N·m')}</div>`;
+    `<div><b>F</b> ${fZero ? '≈ 0 N' : fmtMag(Fm, 'N') + ' ' + dirArrow(ft.F)}</div>` +
+    `<div><b>τ</b> ${tZero ? '≈ 0 N·m' : fmtMag(tauM, 'N·m')}</div>`;
 }
 function nearestMaterial(Br) {
   let best = 1.30, bd = 1e9;

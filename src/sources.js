@@ -225,10 +225,15 @@ export function forceOn(scene, target) {
   const c = target._origin, R = target._R;
   const Bext = (q) => { let b = [0, 0, 0]; for (const s of others) b = P.vadd(b, sourceField(s, q).B); return b; };
   const Eext = (q) => { let e = [0, 0, 0]; for (const s of others) e = P.vadd(e, sourceField(s, q).E); return e; };
-  let F = [0, 0, 0], tau = [0, 0, 0], valid = true;
+  let F = [0, 0, 0], tau = [0, 0, 0], valid = true, Fabs = 0, tauAbs = 0;
   const local = (loc) => P.vadd(c, P.matVec(R, loc));          // local (m) -> world
   const inOther = (q) => { for (const s of others) if (bodyContains(s, q)) return true; return false; };
-  const add = (r, dF) => { F = P.vadd(F, dF); tau = P.vadd(tau, P.vcross(P.vsub(r, c), dF)); };
+  // Also accumulate the sum of contribution magnitudes; the ratio |net|/Σ|dF|
+  // tells us when a result is a genuine value vs. numerical cancellation to zero.
+  const add = (r, dF) => {
+    F = P.vadd(F, dF); Fabs += P.vlen(dF);
+    const t = P.vcross(P.vsub(r, c), dF); tau = P.vadd(tau, t); tauAbs += P.vlen(t);
+  };
 
   if (target.type === 'magnet') {
     // Bound surface charge σ = M·n̂ lives on the two faces ⟂ magnetisation (local z).
@@ -297,12 +302,14 @@ export function forceOn(scene, target) {
       F[i] = (P.vdot(m, Bext(pp)) - P.vdot(m, Bext(pm))) / (2 * h);
     }
     tau = P.vcross(m, Bext(c));
+    Fabs = P.vlen(F); tauAbs = P.vlen(tau);   // direct values, not summed
     if (inOther(c)) valid = false;
   } else if (target.type === 'charge') {
     const q = target.q * P.QE, vel = P.matVec(R, target.vel.map((v) => v * (target.speedScale || 1)));
     F = P.vscale(P.vadd(Eext(c), P.vcross(vel, Bext(c))), q);
+    Fabs = P.vlen(F);
   }
-  return { F, tau, valid, hasExternal: true };
+  return { F, tau, valid, hasExternal: true, Fabs, tauAbs };
 }
 
 // Magnetic moment [A·m²] of a source (for force/torque), or null if N/A.
