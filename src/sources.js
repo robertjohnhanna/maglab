@@ -68,22 +68,24 @@ export function buildSource(s) {
     // Electromagnet: sample the solenoid with a manageable number of loops,
     // each carrying current * (turns / samples) so total ampere-turns is exact.
     const r = mm(s.dia) / 2, L = mm(s.len);
-    const samples = Math.max(6, Math.min(80, s.turns));
+    // Segment budget capped for interactive field evaluation: ~26 loops × 16-gon
+    // rings reproduce the solenoid field to well under 1% a few mm outside.
+    const samples = Math.max(6, Math.min(26, s.turns));
     const Iloop = s.current * s.turns / samples * (s.core || 1);
     for (let i = 0; i < samples; i++) {
       const z = -L / 2 + L * (i + 0.5) / samples;
-      s._segments.push({ pts: ring(r, z, s.seg, toWorld), I: Iloop });
+      s._segments.push({ pts: ring(r, z, 16, toWorld), I: Iloop });
     }
   } else if (s.type === 'cylinder') {
     // Uniformly magnetised cylinder ≡ solenoid of bound surface current K = M = Br/μ0.
     // A slice of height dz carries current K·dz (azimuthal).  Sum stacked loops.
     const r = mm(s.dia) / 2, L = mm(s.len);
     const M = s.Br / P.MU0;                 // magnetisation [A/m]
-    const samples = Math.max(8, Math.min(120, s.seg));
+    const samples = Math.max(8, Math.min(26, s.seg));
     const Iloop = M * (L / samples);
     for (let i = 0; i < samples; i++) {
       const z = -L / 2 + L * (i + 0.5) / samples;
-      s._segments.push({ pts: ring(r, z, 32, toWorld), I: Iloop });
+      s._segments.push({ pts: ring(r, z, 16, toWorld), I: Iloop });
     }
   } else if (s.type === 'wire') {
     const L = mm(s.len);

@@ -192,13 +192,20 @@ export class Renderer {
   }
 
   drawVectors(ctx) {
-    // Uniform-length arrows on a regular grid — direction is always legible;
-    // colour (viridis) encodes field strength.  This reads far cleaner than
-    // magnitude-scaled arrows, which vanish in weak-field regions.
+    // Quiver plot: arrow LENGTH and brightness both encode field strength
+    // (log-scaled), direction is the field direction.  Thin white glyphs with a
+    // dark underlay read cleanly over the viridis heatmap — a scientific look.
     const v = this.view, step = this.opts.gridStep;
     const span = (this.range.max - this.range.min) || 1;
-    const len = step * 0.62, hs = 5;
+    const maxLen = step * 0.9;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const glyph = (cx, cy, ex, ey, a, hs) => {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy); ctx.lineTo(ex, ey);
+      ctx.lineTo(ex - hs * Math.cos(a - 0.42), ey - hs * Math.sin(a - 0.42));
+      ctx.moveTo(ex, ey); ctx.lineTo(ex - hs * Math.cos(a + 0.42), ey - hs * Math.sin(a + 0.42));
+      ctx.stroke();
+    };
     for (let sy = step / 2; sy < v.H; sy += step) {
       for (let sx = step / 2; sx < v.W; sx += step) {
         const wpt = v.toWorld(sx, sy);
@@ -207,23 +214,16 @@ export class Renderer {
         const m = Math.hypot(s[0], s[1]);
         if (m < 1e-13) continue;
         const t = Math.min(1, Math.max(0, (Math.log10(m) - this.range.min) / span));
+        const len = maxLen * (0.22 + 0.78 * t);       // length ∝ intensity
         const ux = s[0] / m, uy = -s[1] / m;
-        const cx = sx - ux * len / 2, cy = sy - uy * len / 2;   // centre glyph on node
+        const cx = sx - ux * len / 2, cy = sy - uy * len / 2;
         const ex = cx + ux * len, ey = cy + uy * len;
-        const c = viridis(0.2 + 0.8 * t);
-        const col = `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`;
         const a = Math.atan2(ey - cy, ex - cx);
-        // dark halo underneath for contrast, then the bright coloured arrow
-        ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey);
-        ctx.lineTo(ex - hs * Math.cos(a - 0.4), ey - hs * Math.sin(a - 0.4));
-        ctx.moveTo(ex, ey); ctx.lineTo(ex - hs * Math.cos(a + 0.4), ey - hs * Math.sin(a + 0.4));
-        ctx.stroke();
-        ctx.strokeStyle = col; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey);
-        ctx.lineTo(ex - hs * Math.cos(a - 0.4), ey - hs * Math.sin(a - 0.4));
-        ctx.moveTo(ex, ey); ctx.lineTo(ex - hs * Math.cos(a + 0.4), ey - hs * Math.sin(a + 0.4));
-        ctx.stroke();
+        const hs = Math.min(5.5, 2.4 + len * 0.2);
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2.3;
+        glyph(cx, cy, ex, ey, a, hs);
+        ctx.strokeStyle = `rgba(255,255,255,${0.45 + 0.5 * t})`; ctx.lineWidth = 1.2;
+        glyph(cx, cy, ex, ey, a, hs);
       }
     }
   }

@@ -87,10 +87,11 @@ function drawProbe() {
   const len = 34;
   const ex = s[0] + comp.u / m2 * len, ey = s[1] - comp.v / m2 * len;
   ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(ex, ey); ctx.stroke();
+  const u = UNITS[fieldUnit], dp = Math.abs(mag * u) >= 100 ? 0 : 1;
   document.getElementById('probeReadout').innerHTML =
-    `<b>|B|</b> ${fmtField(mag)}${probePinned ? ' · pinned' : ''}<br>` +
-    `<b>B</b> (${fmtField(B[0])}, ${fmtField(B[1])}, ${fmtField(B[2])})<br>` +
-    `in-plane ${fmtField(Math.hypot(comp.u, comp.v))} · out ${fmtField(comp.n)}`;
+    `<div><b>|B|</b> ${fmtField(mag)}${probePinned ? ' · pin' : ''}</div>` +
+    `<div>${(B[0] * u).toFixed(dp)}, ${(B[1] * u).toFixed(dp)}, ${(B[2] * u).toFixed(dp)} ${fieldUnit}</div>` +
+    `<div>in-pl ${fmtField(Math.hypot(comp.u, comp.v))} · out ${fmtField(comp.n)}</div>`;
 }
 
 // ---- legend ------------------------------------------------------------
@@ -140,19 +141,33 @@ function drawParticles() {
 }
 function simStep() {
   const fieldFn = (x) => scene.EB(x);
+  const frameTime = simDt * stepsPerFrame;         // sim-seconds advanced per frame
+  const trailGap = view.spanU * 0.004;
   for (const p of particles) {
     if (!p.alive) continue;
-    for (let k = 0; k < stepsPerFrame; k++) {
-      const r = P.borisStep(p.x, p.v, p.q, p.mass, simDt, fieldFn);
-      p.x = r.x; p.v = r.v;
-      if (k % 4 === 0) p.trail.push(p.x);
+    let tacc = 0, sub = 0;
+    while (tacc < frameTime && sub < 6000) {
+      // Adaptive step: keep dt ≤ gyro-period/24 so the Boris orbit stays
+      // accurate even in strong fields (where a fixed dt would under-resolve
+      // the gyration and the trajectory would be wrong).
+      const bmag = P.vlen(scene.B(p.x));
+      const gyroT = bmag > 0 ? (2 * Math.PI * p.mass) / (Math.abs(p.q) * bmag) : Infinity;
+      let dt = Math.min(simDt, gyroT / 24, frameTime - tacc);
+      if (!(dt > 0)) break;
+      const r = P.borisStep(p.x, p.v, p.q, p.mass, dt, fieldFn);
+      p.x = r.x; p.v = r.v; tacc += dt; sub++;
+      const last = p.trail[p.trail.length - 1];
+      if (!last || Math.hypot(p.x[0] - last[0], p.x[1] - last[1], p.x[2] - last[2]) > trailGap) p.trail.push(p.x);
       if (P.vlen(p.x) > view.spanU * 6) { p.alive = false; break; }
     }
-    if (p.trail.length > 4000) p.trail.splice(0, p.trail.length - 4000);
+    if (p.trail.length > 6000) p.trail.splice(0, p.trail.length - 6000);
   }
   updateParticleReadout();
 }
-function startSim() { if (!simRunning) { simRunning = true; requestFrame(); } }
+function startSim() {
+  document.getElementById('pauseSim').textContent = 'Pause';
+  if (!simRunning) { simRunning = true; requestFrame(); }
+}
 function updateParticleReadout() {
   const p = particles[particles.length - 1];
   if (!p) return;
@@ -162,9 +177,9 @@ function updateParticleReadout() {
   const { E, B } = scene.EB(p.x);
   const F = P.lorentzForce(p.q, p.v, E, B);
   document.getElementById('partReadout').innerHTML =
-    `speed ${speed.toExponential(3)} m/s (${(speed / P.C0 * 100).toFixed(2)}% c)<br>` +
-    `KE ${eV > 1e3 ? (eV / 1e3).toFixed(2) + ' keV' : eV.toFixed(1) + ' eV'}<br>` +
-    `B here ${fmtField(P.vlen(B))} · |F| ${P.vlen(F).toExponential(2)} N`;
+    `<div><b>v</b> ${speed.toExponential(2)} m/s · ${(speed / P.C0 * 100).toFixed(2)}% c</div>` +
+    `<div><b>KE</b> ${eV > 1e3 ? (eV / 1e3).toFixed(1) + ' keV' : eV.toFixed(0) + ' eV'}</div>` +
+    `<div><b>B</b> ${fmtField(P.vlen(B))} · <b>F</b> ${P.vlen(F).toExponential(1)} N</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,13 +247,6 @@ function buildInspector() {
   const s = scene.get(selectedId);
   if (!s) { el.innerHTML = '<p class="hint">Select an object</p>'; return; }
 
-  const title = document.createElement('div'); title.className = 'insp-title';
-  title.innerHTML = `<span class="dot" style="background:${s.color}"></span>` +
-    `<input id="nm" value="${s.name}"> <button id="del" class="danger">✕</button>`;
-  el.appendChild(title);
-  title.querySelector('#nm').addEventListener('input', (e) => { s.name = e.target.value; buildList(); });
-  title.querySelector('#del').addEventListener('click', () => { scene.remove(s.id); selectedId = null; buildList(); buildInspector(); invalidateField(); });
-
   const addRow = (label, path, min, max, step) => {
     const row = document.createElement('label'); row.className = 'row';
     const val = getPath(s, path);
@@ -285,10 +293,10 @@ function updateForceTile() {
   const ft = scene.forceTorque(s);
   if (!ft) { el.textContent = '—'; return; }
   el.innerHTML =
-    `<b>|F|</b> ${P.vlen(ft.F).toExponential(2)} N ${fmtVec(ft.F, 1, 'N', 2)}<br>` +
-    `<b>τ</b> ${P.vlen(ft.tau).toExponential(2)} N·m<br>` +
-    `<b>m</b> ${P.vlen(ft.moment).toExponential(2)} A·m² · <b>B</b> ${fmtField(P.vlen(ft.Bext))}<br>` +
-    `<span class="hint">dipole approx</span>`;
+    `<div><b>|F|</b> ${P.vlen(ft.F).toExponential(2)} N</div>` +
+    `<div><b>τ</b> ${P.vlen(ft.tau).toExponential(2)} N·m</div>` +
+    `<div><b>m</b> ${P.vlen(ft.moment).toExponential(2)} A·m²</div>` +
+    `<div><b>B</b> ${fmtField(P.vlen(ft.Bext))} · <span class="hint">dipole approx</span></div>`;
 }
 function nearestMaterial(Br) {
   let best = 1.30, bd = 1e9;
@@ -302,9 +310,15 @@ function buildList() {
     const row = document.createElement('div');
     row.className = 'obj' + (s.id === selectedId ? ' sel' : '');
     row.innerHTML = `<span class="dot" style="background:${s.color}"></span><span class="onm">${s.name}</span>` +
-      `<button class="vis">${s.visible ? '👁' : '∅'}</button>`;
+      `<button class="vis" title="Show/hide">${s.visible ? '👁' : '∅'}</button>` +
+      `<button class="del" title="Delete">✕</button>`;
     row.querySelector('.onm').addEventListener('click', () => { selectedId = s.id; buildList(); buildInspector(); requestDraw(); });
     row.querySelector('.vis').addEventListener('click', (e) => { e.stopPropagation(); s.visible = !s.visible; buildList(); invalidateField(); });
+    row.querySelector('.del').addEventListener('click', (e) => {
+      e.stopPropagation(); scene.remove(s.id);
+      if (selectedId === s.id) selectedId = null;
+      buildList(); buildInspector(); invalidateField();
+    });
     el.appendChild(row);
   }
 }
@@ -509,6 +523,7 @@ function launchParticle() {
 document.getElementById('launch').addEventListener('click', launchParticle);
 document.getElementById('clearParts').addEventListener('click', () => {
   particles.length = 0; simRunning = false;
+  document.getElementById('pauseSim').textContent = 'Pause';
   document.getElementById('partReadout').textContent = 'Launch a particle'; requestDraw();
 });
 document.getElementById('pauseSim').addEventListener('click', (e) => {

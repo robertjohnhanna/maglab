@@ -59,7 +59,9 @@ button.danger { color: var(--danger); padding: 2px 7px; }
 .obj { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 6px; cursor: default; }
 .obj.sel { background: var(--panel2); outline: 1px solid var(--line); }
 .obj .onm { flex: 1; cursor: pointer; }
-.obj .vis { padding: 1px 6px; background: none; border: none; }
+.obj .vis, .obj .del { padding: 1px 5px; background: none; border: none; font-size: 12px; }
+.obj .del { color: var(--dim); }
+.obj .del:hover { color: var(--danger); }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 
 .chk { display: flex; align-items: center; gap: 7px; padding: 3px 0; color: var(--dim); }
@@ -83,6 +85,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
 select { background: var(--panel2); border: 1px solid var(--line); color: var(--txt); border-radius: 5px; padding: 4px 6px; }
 
 .readout { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; line-height: 1.6; min-height: 20px; }
+.readout > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .about p { color: var(--dim); font-size: 12px; }
 a { color: var(--accent); }
 
