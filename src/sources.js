@@ -164,32 +164,113 @@ export class Scene {
     return { E, B };
   }
 
-  // Net force [N] and torque [N·m] on a source from all *other* sources,
-  // using the point-dipole approximation evaluated at the body centre.
-  // Exact for well-separated bodies; approximate when magnets nearly touch.
-  forceTorque(target) {
-    const m = momentOf(target);
-    if (!m) return null;
-    const r0 = target._origin;
-    // External field and its gradient at the body centre (finite difference).
-    const others = this.sources.filter((s) => s !== target && s.visible);
-    const Bext = (Q) => {
-      let b = [0, 0, 0];
-      for (const s of others) b = P.vadd(b, sourceField(s, Q).B);
-      return b;
-    };
-    const B0 = Bext(r0);
-    const h = 1e-4;
-    // F = ∇(m·B).  Torque τ = m × B.
-    const F = [0, 0, 0];
+  // Exact net force [N] and torque [N·m] on a source from all *other* sources.
+  // No dipole approximation: the real Lorentz/Ampère force is integrated over the
+  // body's equivalent currents (F = ∮ I dl×B_ext) for coils/loops/wires, and over
+  // its bound magnetic surface charge (F = ∮ σ B_ext dA, σ = M·n̂) for magnets —
+  // always using B_ext, the field from the OTHER sources only. Valid whenever the
+  // bodies don't interpenetrate.
+  forceTorque(target) { return forceOn(this, target); }
+}
+
+// True if world point q lies inside the solid magnetised body of source s.
+function bodyContains(s, q) {
+  if (s.type === 'sphere') return P.vlen(P.vsub(q, s._origin)) < mm(s.dia) / 2;
+  if (s.type === 'magnet') {
+    const l = P.matTVec(s._R, P.vsub(q, s._origin));
+    return Math.abs(l[0]) < mm(s.size[0]) / 2 && Math.abs(l[1]) < mm(s.size[1]) / 2 && Math.abs(l[2]) < mm(s.size[2]) / 2;
+  }
+  if (s.type === 'cylinder') {
+    const l = P.matTVec(s._R, P.vsub(q, s._origin));
+    return Math.hypot(l[0], l[1]) < mm(s.dia) / 2 && Math.abs(l[2]) < mm(s.len) / 2;
+  }
+  return false;
+}
+
+export function forceOn(scene, target) {
+  const others = scene.sources.filter((s) => s !== target && s.visible);
+  if (!others.length) return { F: [0, 0, 0], tau: [0, 0, 0], valid: true, hasExternal: false };
+  const c = target._origin, R = target._R;
+  const Bext = (q) => { let b = [0, 0, 0]; for (const s of others) b = P.vadd(b, sourceField(s, q).B); return b; };
+  const Eext = (q) => { let e = [0, 0, 0]; for (const s of others) e = P.vadd(e, sourceField(s, q).E); return e; };
+  let F = [0, 0, 0], tau = [0, 0, 0], valid = true;
+  const local = (loc) => P.vadd(c, P.matVec(R, loc));          // local (m) -> world
+  const inOther = (q) => { for (const s of others) if (bodyContains(s, q)) return true; return false; };
+  const add = (r, dF) => { F = P.vadd(F, dF); tau = P.vadd(tau, P.vcross(P.vsub(r, c), dF)); };
+
+  if (target.type === 'magnet') {
+    // Bound surface charge σ = M·n̂ lives on the two faces ⟂ magnetisation (local z).
+    const M = target.Br / P.MU0;
+    const a = mm(target.size[0]) / 2, b = mm(target.size[1]) / 2, cc = mm(target.size[2]) / 2;
+    const nx = 9, ny = 9, dA = (2 * a / nx) * (2 * b / ny);
+    for (const [zf, sgn] of [[cc, 1], [-cc, -1]]) {
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+        const r = local([-a + (i + 0.5) * (2 * a / nx), -b + (j + 0.5) * (2 * b / ny), zf]);
+        if (inOther(r)) valid = false;
+        add(r, P.vscale(Bext(r), sgn * M * dA));
+      }
+    }
+  } else if (target.type === 'cylinder') {
+    const M = target.Br / P.MU0, rad = mm(target.dia) / 2, hl = mm(target.len) / 2;
+    const nr = 6, nth = 20;
+    for (const [zf, sgn] of [[hl, 1], [-hl, -1]]) {
+      for (let ir = 0; ir < nr; ir++) for (let it = 0; it < nth; it++) {
+        const rr = rad * (ir + 0.5) / nr, th = 2 * Math.PI * (it + 0.5) / nth;
+        const dA = (rad / nr) * rr * (2 * Math.PI / nth);
+        const r = local([rr * Math.cos(th), rr * Math.sin(th), zf]);
+        if (inOther(r)) valid = false;
+        add(r, P.vscale(Bext(r), sgn * M * dA));
+      }
+    }
+  } else if (target.type === 'sphere') {
+    const M = target.Br / P.MU0, rad = mm(target.dia) / 2;
+    const nth = 18, nph = 28;
+    for (let it = 0; it < nth; it++) for (let ip = 0; ip < nph; ip++) {
+      const th = Math.PI * (it + 0.5) / nth, ph = 2 * Math.PI * (ip + 0.5) / nph;
+      const dA = rad * rad * Math.sin(th) * (Math.PI / nth) * (2 * Math.PI / nph);
+      const n = [Math.sin(th) * Math.cos(ph), Math.sin(th) * Math.sin(ph), Math.cos(th)];
+      const r = local(P.vscale(n, rad));
+      if (inOther(r)) valid = false;
+      add(r, P.vscale(Bext(r), M * Math.cos(th) * dA));   // σ = M·n̂ = M cosθ
+    }
+  } else if (target._loops) {
+    const a = target._loopR, nseg = 60;
+    for (const lp of target._loops) {
+      for (let k = 0; k < nseg; k++) {
+        const t0 = 2 * Math.PI * k / nseg, t1 = 2 * Math.PI * (k + 1) / nseg, tm = (t0 + t1) / 2;
+        const dl = P.vsub(P.matVec(R, [a * Math.cos(t1), a * Math.sin(t1), lp.z]),
+                          P.matVec(R, [a * Math.cos(t0), a * Math.sin(t0), lp.z]));
+        const r = local([a * Math.cos(tm), a * Math.sin(tm), lp.z]);
+        if (inOther(r)) valid = false;
+        add(r, P.vscale(P.vcross(dl, Bext(r)), lp.I));     // dF = I dl × B_ext
+      }
+    }
+  } else if (target._segments) {
+    for (const seg of target._segments) {
+      const A = seg.pts[0], Bp = seg.pts[1], nseg = 40;
+      const lerp = (t) => [A[0] + (Bp[0] - A[0]) * t, A[1] + (Bp[1] - A[1]) * t, A[2] + (Bp[2] - A[2]) * t];
+      for (let k = 0; k < nseg; k++) {
+        const dl = P.vsub(lerp((k + 1) / nseg), lerp(k / nseg));
+        const r = lerp((k + 0.5) / nseg);
+        if (inOther(r)) valid = false;
+        add(r, P.vscale(P.vcross(dl, Bext(r)), seg.I));
+      }
+    }
+  } else if (target.type === 'dipole') {
+    // ideal point dipole: force = ∇(m·B_ext) is exact here
+    const m = P.matVec(R, [0, 0, target.moment]);
+    const h = 5e-5;
     for (let i = 0; i < 3; i++) {
-      const pp = r0.slice(); pp[i] += h;
-      const pm = r0.slice(); pm[i] -= h;
+      const pp = c.slice(), pm = c.slice(); pp[i] += h; pm[i] -= h;
       F[i] = (P.vdot(m, Bext(pp)) - P.vdot(m, Bext(pm))) / (2 * h);
     }
-    const tau = P.vcross(m, B0);
-    return { F, tau, Bext: B0, moment: m };
+    tau = P.vcross(m, Bext(c));
+    if (inOther(c)) valid = false;
+  } else if (target.type === 'charge') {
+    const q = target.q * P.QE, vel = P.matVec(R, target.vel.map((v) => v * (target.speedScale || 1)));
+    F = P.vscale(P.vadd(Eext(c), P.vcross(vel, Bext(c))), q);
   }
+  return { F, tau, valid, hasExternal: true };
 }
 
 // Magnetic moment [A·m²] of a source (for force/torque), or null if N/A.

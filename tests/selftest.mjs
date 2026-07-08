@@ -143,6 +143,33 @@ console.log('\n== Point dipole ==');
   check('dipole equatorial Bz', rel(equator[2], expEq) < 1e-9, `${equator[2]} vs ${expEq}`);
 }
 
+console.log('\n== Exact force / torque ==');
+{
+  const A = defaultSource('magnet'); A.size = [10, 10, 10]; A.pos = [0, 0, 0];
+  const B = defaultSource('magnet'); B.size = [10, 10, 10]; B.pos = [0, 0, 80];
+  const sc = new Scene(); sc.add(A); sc.add(B);
+  const fA = forceOn(sc, A), fB = forceOn(sc, B);
+  const m = vlen(momentOf(A)), d = 0.08;
+  const dipoleF = 3 * MU0 * m * m / (2 * Math.PI * Math.pow(d, 4));
+  check('force matches dipole–dipole far field', rel(vlen(fA.F), dipoleF) < 5e-3, `${vlen(fA.F)} vs ${dipoleF}`);
+  check('aligned coaxial magnets attract (F toward the other)', fA.F[2] > 0, fA.F[2]);
+  const net = vlen([fA.F[0] + fB.F[0], fA.F[1] + fB.F[1], fA.F[2] + fB.F[2]]);
+  check("Newton's third law (F_AB = −F_BA)", net / vlen(fA.F) < 1e-6, net);
+
+  const lone = new Scene(); lone.add(defaultSource('magnet'));
+  check('lone body feels no force', vlen(forceOn(lone, lone.sources[0]).F) === 0, '');
+
+  // magnet in the ~uniform field of a large distant coil: net force ≈ 0, torque real
+  const uni = new Scene();
+  const mg = defaultSource('magnet'); mg.size = [6, 6, 15]; mg.rot = [0, 55, 0]; uni.add(mg);
+  const coil = defaultSource('coil'); coil.dia = 300; coil.len = 300; coil.turns = 800; coil.current = 6; uni.add(coil);
+  const fu = forceOn(uni, mg);
+  const scaleF = 0.13 * vlen(uni.B(mg._origin)) / 0.006;   // characteristic force scale
+  check('uniform field ⇒ ~zero net force', vlen(fu.F) / scaleF < 1e-2, vlen(fu.F));
+  check('uniform field ⇒ nonzero torque', vlen(fu.tau) > 0, vlen(fu.tau));
+}
+import { Scene, defaultSource, forceOn, momentOf } from '../src/sources.js';
+
 console.log('\n== Boris pusher (charged particle) ==');
 {
   // Electron in a uniform B = B ẑ.  Expect a circle of radius r = m v /(q B),

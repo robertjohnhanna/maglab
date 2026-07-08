@@ -47,8 +47,7 @@ Full derivations, formulas and references: **[docs/PHYSICS.md](docs/PHYSICS.md)*
 | Field visualisation | log-scaled \|B\| heat-map, field-line streamlines, a scientific vector quiver (length + brightness encode strength), and a reference grid |
 | Slice control | view the XZ / XY / YZ plane at any offset through the 3-D scene |
 | Field probe | drag the ⊕ pin to read the full 3-D **B** vector, in T / mT / µT / G / mG |
-| Force & torque | dipole-model net force and torque on the selected body |
-| Continuous-work check | carries a test magnet once around a closed loop (drawn around the probe) and reports the net cyclic work ∮F·dl — ≈ 0 for any static arrangement (magnetostatics is conservative — no perpetual motion), shown against the one-time energy available |
+| Force & torque | **exact** net force and torque on the selected body (Lorentz/Ampère surface integral — no dipole approximation), valid at any separation |
 | Particle lab | launch electrons or protons at a chosen speed; real-time, adaptive Boris integration; live speed, kinetic energy and force readout |
 | Scenarios | one-click presets: two magnets, solenoid, Helmholtz coils, horseshoe, wire + compass field, cyclotron orbit |
 
@@ -107,8 +106,8 @@ docs/PHYSICS.md     derivations, formulas, references
 ## Accuracy & limits
 
 The honest list is in [docs/PHYSICS.md](docs/PHYSICS.md#visualisation-caveats).
-In short: fields are exact for the idealised sources; the force/torque read-out
-uses the dipole approximation (exact when bodies are well separated); the
+In short: fields and forces are exact for the idealised sources (forces use the
+real Lorentz/Ampère surface integral, not a dipole approximation); the
 electromagnet core-µ factor is a deliberately simple linear stand-in; particle
 motion is non-relativistic; and the display is a 2-D slice of a fully 3-D
 calculation.

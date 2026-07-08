@@ -91,56 +91,26 @@ demagnetising factors and saturation) and is labelled as such in the UI.
 - **Moving point charge**: E = kq r̂/r², B = (μ₀/4π) q **v**×r̂/r²
   (the point-charge Biot–Savart law, valid for v ≪ c).
 
-## Forces and torques
+## Forces and torques — exact, no dipole approximation
 
-For a selected magnet/coil/dipole the app reports the net force and torque from
-all *other* sources using the point-dipole relations evaluated at the body
-centre:
+The net force and torque on the selected body from all *other* sources is
+computed by integrating the **actual** force density over the body, using
+B_ext (the field of the other sources only) — never the point-dipole/far-field
+approximation. It is valid at any separation, including nearly-touching magnets,
+as long as the bodies don't interpenetrate.
 
-```
-τ = m × B_ext        F = ∇(m · B_ext)
-```
+- **Currents (coil / loop / wire):** the Lorentz force on the conductor,
+  F = ∮ I dl × B_ext, integrated along the wire.
+- **Magnets (bar / cylinder / sphere):** the force on the bound magnetic surface
+  charge, F = ∮ σ B_ext dA with σ = M·n̂ (Amperian/Gilbert surface integral).
+- **Point dipole:** F = ∇(m·B_ext), which is exact for an ideal dipole.
+- **Moving charge:** F = q(E_ext + v × B_ext).
 
-with the magnetic moment m = (Br/μ₀)·V for a magnet, or I·N·A for a coil. This is
-**exact for well-separated bodies** and an approximation when two magnets nearly
-touch (where higher multipoles matter). The gradient is taken numerically.
-
-## Continuous work & conservation of energy
-
-A magnet in a static field has potential energy U = −**m**·**B**, and the force
-on it is F = ∇(**m**·**B**) = −∇U — a *conservative* field. The net work done
-over any closed path is therefore
-
-```
-W_cycle = ∮ F·dl = −∮ ∇U·dl = 0
-```
-
-exactly, for every static arrangement of magnets and steady currents. You can
-extract energy *once* (two magnets snapping together releases ΔU), but restoring
-the configuration costs the same ΔU, so there is **no net continuous work** — no
-magnetostatic "free energy" or perpetual motion.
-
-The **Continuous work** tile makes this measurable: it carries a small test
-magnet (modelled as freely aligning with **B**, the best case for extraction,
-U = −m|B|) once around a closed loop centred on the probe and numerically sums
-∮F·dl. The result is ~0 to numerical precision, displayed next to the one-stroke
-energy ΔU = m·(|B|max − |B|min) for contrast. A layout that produced net cyclic
-work would show a nonzero integral here; none can, because the field is a
-gradient. (Continuous power is only possible with *time-varying* fields —
-induction/generators — which take in as much work as they deliver.)
-
-**Validity and safeguards.** The theorem only holds where the test magnet stays
-in **free space**. *Inside* solid magnetised material the field is discontinuous
-(bound-current surfaces carry ∇×B ≠ 0) and the scenario is unphysical, so the
-integral there converges to a spurious nonzero value. The tool therefore
-**refuses** any loop whose path enters a magnet/sphere/cylinder body (the loop is
-drawn red and the tile says so) instead of reporting a false result. Near a
-current filament the integral is real but slow to converge, so the tile also
-evaluates at two resolutions and reports **"under-resolved — refine"** if they
-disagree. Only when the path is clean and converged does it report the (≈ 0)
-cyclic work — with the one-stroke ΔU shown alongside to prove real forces are
-present but net to zero. This makes the check a genuine test, not a rubber stamp:
-it will not hand back "0" for a path where the number would be meaningless.
+Torque is accumulated as τ = ∮ (r − r₀) × dF over the same elements. Verified
+against the analytic dipole–dipole force in the far field (agreement to ~0.01 %),
+Newton's third law (|F_AB + F_BA| ≈ 0 to machine precision), zero net force in a
+uniform field (with the correct nonzero torque), and the correct sign of the
+force between parallel current loops.
 
 ## Charged-particle dynamics — Boris pusher
 

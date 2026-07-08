@@ -1,6 +1,6 @@
 // main.js — app glue: scene management, UI panels, interaction, particle sim.
 import * as P from './physics.js';
-import { Scene, defaultSource, buildSource, momentOf, sourceExtent, MATERIALS } from './sources.js';
+import { Scene, defaultSource, buildSource, sourceExtent, MATERIALS } from './sources.js';
 import { Renderer, View } from './render.js';
 
 const scene = new Scene();
@@ -73,7 +73,7 @@ function draw() {
   drawLegend();
 }
 function requestDraw() { requestFrame(); }
-function invalidateField() { gridDirty = true; updateForceTile(); updateWorkTile(); requestFrame(); }
+function invalidateField() { gridDirty = true; updateForceTile(); requestFrame(); }
 function invalidateLayers() { layersDirty = true; requestFrame(); }
 
 // ---- probe overlay -----------------------------------------------------
@@ -94,109 +94,10 @@ function drawProbe() {
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(s[0], s[1], 9, 0, 7); ctx.stroke();
   ctx.beginPath(); ctx.arc(s[0], s[1], 2.5, 0, 7); ctx.fill();
-  // test-work cycle loop (dashed) — the closed path the "Continuous work" tile
-  // integrates the magnetic force around. Red if it crosses a source (invalid).
-  const R = workLoopRadius();
-  const rpx = R * view.scale;
-  const blocked = loopHitsSolid(probe, R);
-  ctx.save();
-  ctx.setLineDash([5, 4]); ctx.lineWidth = 1.3;
-  ctx.strokeStyle = blocked ? 'rgba(230,72,61,0.85)' : 'rgba(255,210,74,0.6)';
-  ctx.beginPath(); ctx.arc(s[0], s[1], rpx, 0, 7); ctx.stroke();
-  ctx.restore();
   const u = UNITS[fieldUnit], dp = Math.abs(mag * u) >= 100 ? 0 : 1;
   document.getElementById('probeReadout').innerHTML =
     `<div><b>|B|</b> ${fmtField(mag)}</div>` +
-    `<div>${(B[0] * u).toFixed(dp)}, ${(B[1] * u).toFixed(dp)}, ${(B[2] * u).toFixed(dp)} ${fieldUnit}</div>` +
-    `<div>in-pl ${fmtField(Math.hypot(comp.u, comp.v))} · out ${fmtField(comp.n)}</div>`;
-}
-
-// ---- continuous-work (perpetual-motion) check --------------------------
-// Carry a small test magnet once around a closed loop centred on the probe and
-// sum the work done by the magnetic force, W = ∮ F·dl.  The magnetostatic force
-// on a magnet is conservative — F = ∇(m·B) = −∇U — so for ANY static
-// arrangement this integral is exactly zero: energy can be extracted once (a
-// magnet snapping in) but the return stroke costs the same, netting nothing per
-// cycle.  A genuine "free energy" layout would make this nonzero; here any
-// residual is just numerical.  We model the test object as a small magnet that
-// freely aligns with B (best case for extraction): U = −m·|B|, F = m·∇|B|.
-const WORK_R_FRAC = 0.13;         // loop radius as a fraction of the view span
-const TEST_M = 0.13;              // test moment [A·m²] ≈ a 5 mm N42 magnet
-function workLoopRadius() { return Math.max(1e-4, view.spanU * WORK_R_FRAC); }
-
-// The theorem ∮F·dl = 0 holds only where the test magnet stays in FREE SPACE.
-// Inside solid magnetised material the field is discontinuous (nonzero curl at
-// bound-current surfaces) and the "carry a test magnet through here" scenario is
-// unphysical — there the integral converges to a *wrong*, nonzero value. So we
-// hard-refuse any loop whose path enters a magnet/sphere/cylinder body. (Near a
-// current filament the integral is merely slow to converge, which the
-// resolution check below catches, so those don't need a hard refusal.)
-const _mm = (v) => v / 1000;
-function pointInSolid(q, s) {
-  if (s.type === 'sphere') return P.vlen(P.vsub(q, s._origin)) < _mm(s.dia) / 2;
-  if (s.type === 'magnet') {
-    const l = P.matTVec(s._R, P.vsub(q, s._origin));
-    return Math.abs(l[0]) < _mm(s.size[0]) / 2 && Math.abs(l[1]) < _mm(s.size[1]) / 2 && Math.abs(l[2]) < _mm(s.size[2]) / 2;
-  }
-  if (s.type === 'cylinder') {
-    const l = P.matTVec(s._R, P.vsub(q, s._origin));
-    return Math.hypot(l[0], l[1]) < _mm(s.dia) / 2 && Math.abs(l[2]) < _mm(s.len) / 2;
-  }
-  return false;   // coil bore / wire / dipole / charge: not solid material
-}
-function loopHitsSolid(center, R) {
-  const uA = view.uAxis, vA = view.vAxis, M = 60;
-  for (let i = 0; i < M; i++) {
-    const th = 2 * Math.PI * i / M;
-    const q = center.slice(); q[uA] = center[uA] + R * Math.cos(th); q[vA] = center[vA] + R * Math.sin(th);
-    for (const s of scene.sources) if (s.visible && pointInSolid(q, s)) return s;
-  }
-  return null;
-}
-// Work integral ∮F·dl for a freely-aligning test magnet (U = −m·|B|,
-// F = m·∇|B|) around the loop, at resolution N. Returns { W, dU }.
-function loopIntegral(center, R, N) {
-  const uA = view.uAxis, vA = view.vAxis;
-  const h = Math.max(1e-6, R * 1e-3);
-  const bmag = (q) => P.vlen(scene.B(q));
-  const at = (th) => { const q = center.slice(); q[uA] = center[uA] + R * Math.cos(th); q[vA] = center[vA] + R * Math.sin(th); return q; };
-  let W = 0, bMin = Infinity, bMax = -Infinity, prev = at(0);
-  for (let i = 1; i <= N; i++) {
-    const cur = at(2 * Math.PI * i / N);
-    const mid = [(prev[0] + cur[0]) / 2, (prev[1] + cur[1]) / 2, (prev[2] + cur[2]) / 2];
-    for (const ax of [uA, vA]) {
-      const a = mid.slice(), b = mid.slice(); a[ax] += h; b[ax] -= h;
-      W += TEST_M * (bmag(a) - bmag(b)) / (2 * h) * (cur[ax] - prev[ax]);
-    }
-    const bc = bmag(cur); if (bc < bMin) bMin = bc; if (bc > bMax) bMax = bc;
-    prev = cur;
-  }
-  return { W, dU: TEST_M * (bMax - bMin) };
-}
-function computeCycleWork() {
-  if (!probe || !scene.sources.length) return null;
-  const R = workLoopRadius();
-  if (loopHitsSolid(probe, R)) return { blocked: true };
-  // evaluate at two resolutions to confirm the integral has converged
-  const lo = loopIntegral(probe, R, 160);
-  const hi = loopIntegral(probe, R, 320);
-  return { W: hi.W, dU: hi.dU, gap: Math.abs(hi.W - lo.W), R };
-}
-function updateWorkTile() {
-  const el = document.getElementById('workReadout');
-  const r = computeCycleWork();
-  if (!r) { el.textContent = 'Add sources; drag the ⊕ pin'; return; }
-  if (r.blocked) { el.innerHTML = '<div>Loop path crosses a source.</div><div class="hint">move the ⊕ pin to open space</div>'; return; }
-  if (r.dU <= 0) { el.innerHTML = '<div>Field is uniform on the loop</div><div class="hint">∮F·dl = 0</div>'; return; }
-  const ratio = Math.abs(r.W) / r.dU;
-  // The residual should vanish as the loop is refined; if the two resolutions
-  // still disagree, we're under-resolved rather than measuring a real effect.
-  const converged = r.gap < 1e-2 * r.dU;
-  const verdict = !converged ? 'under-resolved — refine' : (ratio < 1e-2 ? 'balanced — no continuous work' : 'residual (numerical)');
-  el.innerHTML =
-    `<div><b>Cycle</b> ∮F·dl ${r.W.toExponential(2)} J</div>` +
-    `<div><b>1-stroke</b> ΔU ${r.dU.toExponential(2)} J</div>` +
-    `<div>net/stroke ${ratio.toExponential(1)} · ${verdict}</div>`;
+    `<div>${(B[0] * u).toFixed(dp)}, ${(B[1] * u).toFixed(dp)}, ${(B[2] * u).toFixed(dp)} ${fieldUnit}</div>`;
 }
 
 // ---- legend ------------------------------------------------------------
@@ -282,9 +183,9 @@ function updateParticleReadout() {
   const { E, B } = scene.EB(p.x);
   const F = P.lorentzForce(p.q, p.v, E, B);
   document.getElementById('partReadout').innerHTML =
-    `<div><b>v</b> ${speed.toExponential(2)} m/s · ${(speed / P.C0 * 100).toFixed(2)}% c</div>` +
     `<div><b>KE</b> ${eV > 1e3 ? (eV / 1e3).toFixed(1) + ' keV' : eV.toFixed(0) + ' eV'}</div>` +
-    `<div><b>B</b> ${fmtField(P.vlen(B))} · <b>F</b> ${P.vlen(F).toExponential(1)} N</div>`;
+    `<div><b>v</b> ${speed.toExponential(1)} m/s (${(speed / P.C0 * 100).toFixed(1)}% c)</div>` +
+    `<div><b>F</b> ${fmtMag(P.vlen(F), 'N')}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,17 +292,32 @@ function buildInspector() {
 }
 
 // Force/torque data tile (right panel), kept current on any scene change.
+// auto-scaled magnitude formatter, e.g. 12.3 mN, 4.56 µN·m
+function fmtMag(x, unit) {
+  const a = Math.abs(x);
+  if (a === 0) return `0 ${unit}`;
+  const p = [[1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'], [1e-18, 'a']];
+  for (const [scale, pre] of p) { if (a >= scale || scale === 1e-18) { const v = x / scale; return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${pre}${unit}`; } }
+}
+// 8-way in-plane direction arrow; ⊙/⊗ when the vector points out of / into the view plane
+function dirArrow(vec) {
+  const c = view.planeComps(vec), ip = Math.hypot(c.u, c.v);
+  if (ip === 0 && c.n === 0) return '';
+  if (Math.abs(c.n) > ip) return c.n > 0 ? '⊙' : '⊗';
+  const arr = ['→', '↗', '↑', '↖', '←', '↙', '↓', '↘'];
+  return arr[((Math.round(Math.atan2(c.v, c.u) / (Math.PI / 4)) % 8) + 8) % 8];
+}
 function updateForceTile() {
   const el = document.getElementById('forceReadout');
   const s = scene.get(selectedId);
-  if (!s || !momentOf(s)) { el.textContent = s ? 'No force data' : 'Select an object'; return; }
+  if (!s) { el.textContent = 'Select an object'; return; }
   const ft = scene.forceTorque(s);
-  if (!ft) { el.textContent = '—'; return; }
+  if (!ft || !ft.hasExternal) { el.innerHTML = '<div>Net force needs</div><div class="hint">a second source</div>'; return; }
+  if (!ft.valid) { el.innerHTML = '<div>Objects overlap</div><div class="hint">separate to read force</div>'; return; }
+  const Fm = P.vlen(ft.F);
   el.innerHTML =
-    `<div><b>|F|</b> ${P.vlen(ft.F).toExponential(2)} N</div>` +
-    `<div><b>τ</b> ${P.vlen(ft.tau).toExponential(2)} N·m</div>` +
-    `<div><b>m</b> ${P.vlen(ft.moment).toExponential(2)} A·m²</div>` +
-    `<div><b>B</b> ${fmtField(P.vlen(ft.Bext))} · <span class="hint">dipole approx</span></div>`;
+    `<div><b>F</b> ${fmtMag(Fm, 'N')} ${Fm > 0 ? dirArrow(ft.F) : ''}</div>` +
+    `<div><b>τ</b> ${fmtMag(P.vlen(ft.tau), 'N·m')}</div>`;
 }
 function nearestMaterial(Br) {
   let best = 1.30, bd = 1e9;
@@ -557,7 +473,7 @@ canvas.addEventListener('pointermove', (e) => {
     invalidateField(); return;
   }
   if (dragMode === 'probe') {
-    probe = view.toWorld(sx, sy); updateWorkTile(); requestDraw();
+    probe = view.toWorld(sx, sy); requestDraw();
   } else if (dragMode === 'pan') {
     view.center[0] = dragStart[2] - (sx - dragStart[0]) / view.scale;
     view.center[1] = dragStart[3] + (sy - dragStart[1]) / view.scale;
