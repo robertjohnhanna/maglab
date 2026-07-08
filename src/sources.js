@@ -187,9 +187,41 @@ function bodyContains(s, q) {
   return false;
 }
 
+// Oriented bounding box for a solid body (sphere/cylinder treated as their
+// enclosing box — conservative, which is the safe direction for refusing).
+function obbOf(s) {
+  let he;
+  if (s.type === 'magnet') he = [mm(s.size[0]) / 2, mm(s.size[1]) / 2, mm(s.size[2]) / 2];
+  else if (s.type === 'sphere') { const r = mm(s.dia) / 2; he = [r, r, r]; }
+  else if (s.type === 'cylinder') { const r = mm(s.dia) / 2; he = [r, r, mm(s.len) / 2]; }
+  else return null;
+  const R = s._R;
+  const ax = [[R[0][0], R[1][0], R[2][0]], [R[0][1], R[1][1], R[2][1]], [R[0][2], R[1][2], R[2][2]]];
+  return { c: s._origin, he, ax };
+}
+// Exact oriented-box overlap via the Separating Axis Theorem.
+function bodiesOverlap(sa, sb) {
+  const a = obbOf(sa), b = obbOf(sb);
+  if (!a || !b) return false;
+  const T = P.vsub(b.c, a.c);
+  const axes = [a.ax[0], a.ax[1], a.ax[2], b.ax[0], b.ax[1], b.ax[2]];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    const cr = P.vcross(a.ax[i], b.ax[j]);
+    if (P.vlen(cr) > 1e-9) axes.push(P.vnorm(cr));
+  }
+  for (const L of axes) {
+    let ra = 0, rb = 0;
+    for (let i = 0; i < 3; i++) { ra += a.he[i] * Math.abs(P.vdot(a.ax[i], L)); rb += b.he[i] * Math.abs(P.vdot(b.ax[i], L)); }
+    if (Math.abs(P.vdot(T, L)) > ra + rb + 1e-9) return false;   // a separating axis exists → no overlap
+  }
+  return true;
+}
+
 export function forceOn(scene, target) {
   const others = scene.sources.filter((s) => s !== target && s.visible);
   if (!others.length) return { F: [0, 0, 0], tau: [0, 0, 0], valid: true, hasExternal: false };
+  // interpenetrating bodies → force is undefined; refuse rather than report garbage
+  for (const o of others) if (bodiesOverlap(target, o)) return { F: [0, 0, 0], tau: [0, 0, 0], valid: false, hasExternal: true };
   const c = target._origin, R = target._R;
   const Bext = (q) => { let b = [0, 0, 0]; for (const s of others) b = P.vadd(b, sourceField(s, q).B); return b; };
   const Eext = (q) => { let e = [0, 0, 0]; for (const s of others) e = P.vadd(e, sourceField(s, q).E); return e; };

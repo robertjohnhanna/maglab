@@ -159,6 +159,20 @@ console.log('\n== Exact force / torque ==');
   const lone = new Scene(); lone.add(defaultSource('magnet'));
   check('lone body feels no force', vlen(forceOn(lone, lone.sources[0]).F) === 0, '');
 
+  // N-to-N magnets on a common axis repel purely ALONG that axis (no transverse force)
+  const nn = new Scene();
+  const L = defaultSource('magnet'); L.size = [10, 10, 20]; L.pos = [-16, 0, 0]; L.rot = [0, 90, 0]; nn.add(L);
+  const Rm = defaultSource('magnet'); Rm.size = [10, 10, 20]; Rm.pos = [16, 0, 0]; Rm.rot = [0, -90, 0]; nn.add(Rm);
+  const fN = forceOn(nn, Rm);
+  check('N-N force is axial (transverse ≈ 0)', Math.hypot(fN.F[1], fN.F[2]) / Math.abs(fN.F[0]) < 1e-6, fN.F.toString());
+  check('N-N force is repulsive (away from other)', fN.F[0] > 0, fN.F[0]);
+
+  // interpenetrating bodies are refused, not given a bogus force
+  const ov = new Scene();
+  const O1 = defaultSource('magnet'); O1.size = [10, 10, 20]; O1.pos = [-4, 0, 0]; O1.rot = [0, 90, 0]; ov.add(O1);
+  const O2 = defaultSource('magnet'); O2.size = [10, 10, 20]; O2.pos = [4, 0, 0]; O2.rot = [0, -90, 0]; ov.add(O2);
+  check('overlapping bodies → force refused', forceOn(ov, O2).valid === false, '');
+
   // magnet in the ~uniform field of a large distant coil: net force ≈ 0, torque real
   const uni = new Scene();
   const mg = defaultSource('magnet'); mg.size = [6, 6, 15]; mg.rot = [0, 55, 0]; uni.add(mg);
