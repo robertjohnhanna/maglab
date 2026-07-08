@@ -271,7 +271,7 @@ function buildInspector() {
     if (def[1] === 'material') {
       const row = document.createElement('label'); row.className = 'row';
       row.innerHTML = `<span>${def[0]}</span>`;
-      const sel = document.createElement('select');
+      const sel = document.createElement('select'); sel.id = 'matSel';
       for (const name of Object.keys(MATERIALS)) sel.innerHTML += `<option value="${MATERIALS[name]}">${name}</option>`;
       sel.value = String(nearestMaterial(s.Br));
       sel.addEventListener('change', () => { s.Br = parseFloat(sel.value); buildSource(s); buildInspector(); invalidateField(); });
@@ -347,7 +347,7 @@ const planes = {
   'YZ · front':[1, 2, 0],
 };
 const planeSel = document.getElementById('planeSel');
-for (const name of Object.keys(planes)) planeSel.innerHTML += `<option>${name}</option>`;
+for (const name of Object.keys(planes)) planeSel.innerHTML += `<option value="${name}">${name.toUpperCase()}</option>`;
 planeSel.addEventListener('change', () => {
   const [u, v, n] = planes[planeSel.value]; view.uAxis = u; view.vAxis = v; view.nAxis = n;
   document.getElementById('axU').textContent = view.axisLabel(u);
@@ -575,8 +575,8 @@ const presets = {
   },
 };
 const presetSel = document.getElementById('presetSel');
-presetSel.innerHTML = '<option value="">Scenario…</option>';
-for (const name of Object.keys(presets)) presetSel.innerHTML += `<option>${name}</option>`;
+presetSel.innerHTML = '<option value="">SCENARIO…</option>';
+for (const name of Object.keys(presets)) presetSel.innerHTML += `<option value="${name}">${name.toUpperCase()}</option>`;
 presetSel.addEventListener('change', () => {
   if (!presets[presetSel.value]) return;
   particles.length = 0; simRunning = false;

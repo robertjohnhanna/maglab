@@ -14,10 +14,10 @@
   <div class="topctrl">
     <select id="presetSel" title="Scenario"></select>
     <label>Plane <select id="planeSel"></select></label>
-    <label>Slice <input id="sliceInput" type="number" value="0" step="1" style="width:52px"> mm</label>
+    <label>Slice <input id="sliceInput" type="number" value="0" step="1" style="width:52px"> <span class="lc">mm</span></label>
     <label>Units <select id="unitSel"></select></label>
     <label title="Snap to grid"><input type="checkbox" id="snapChk"> Snap
-      <input id="snapStep" type="number" value="1" step="0.5" min="0.5" style="width:44px"> mm</label>
+      <input id="snapStep" type="number" value="1" step="0.5" min="0.5" style="width:44px"> <span class="lc">mm</span></label>
   </div>
 </header>
 
@@ -39,7 +39,7 @@
       <h2>Particle</h2>
       <div class="prow">
         <select id="pType"><option value="electron">e⁻</option><option value="proton">p⁺</option></select>
-        <label>Speed <input id="pSpeed" type="number" value="3000000" step="1e5" style="width:92px"> m/s</label>
+        <label>Speed <input id="pSpeed" type="number" value="3000000" step="1e5" style="width:92px"> <span class="lc">m/s</span></label>
       </div>
       <div class="prow">
         <button id="launch" class="primary">Launch</button>
