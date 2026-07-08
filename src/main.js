@@ -327,8 +327,12 @@ function buildInspector() {
     }
     addRow(...def);
   }
-  const hr = document.createElement('hr'); el.appendChild(hr);
-  for (const def of commonDefs) addRow(...def);
+  // Common params under labelled group dividers instead of a bare rule.
+  const GRP = { 'pos.0': 'Position', 'rot.0': 'Orientation' };
+  for (const def of commonDefs) {
+    if (GRP[def[1]]) { const g = document.createElement('div'); g.className = 'grp'; g.textContent = GRP[def[1]]; el.appendChild(g); }
+    addRow(...def);
+  }
   updateForceTile();
 }
 
