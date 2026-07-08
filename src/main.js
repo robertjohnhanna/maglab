@@ -252,7 +252,7 @@ function buildInspector() {
   const el = document.getElementById('inspector');
   el.innerHTML = '';
   const s = scene.get(selectedId);
-  if (!s) { el.innerHTML = '<p class="hint">Select an object</p>'; return; }
+  if (!s) { el.innerHTML = '<p class="hint">Select an object</p>'; updateForceTile(); return; }
 
   const addRow = (label, path, min, max, step) => {
     const row = document.createElement('label'); row.className = 'row';
@@ -438,6 +438,8 @@ canvas.addEventListener('pointerdown', (e) => {
     dragMode = 'obj'; dragStart = [sx, sy]; dragObjStart = hit.pos.slice();
     canvas.style.cursor = 'grabbing';
   } else {
+    // clicking empty space clears the selection (inspector + ring)
+    if (selectedId !== null) { selectedId = null; buildList(); buildInspector(); requestDraw(); }
     dragMode = 'pan'; dragStart = [sx, sy, view.center[0], view.center[1]];
     canvas.style.cursor = 'grabbing';
   }
