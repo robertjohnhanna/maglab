@@ -39,7 +39,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; col
 
 main { position: relative; min-width: 0; }
 #canvasWrap { position: absolute; inset: 0; }
-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; background: var(--bg); }
 #axisBadge, #hintBadge {
   position: absolute; background: rgba(10,12,18,.6); color: var(--dim);
   padding: 4px 8px; border-radius: 6px; font-size: 11px; pointer-events: none;

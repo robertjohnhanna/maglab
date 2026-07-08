@@ -27,18 +27,26 @@ function fmtVec(v, unitScale, unit, d = 2) {
 }
 
 // ---- canvas sizing -----------------------------------------------------
+// Setting canvas.width/height clears the bitmap, so only do it when the size
+// actually changed.  On mobile, hiding/showing the URL bar fires a resize event
+// without changing the canvas size — re-clearing there caused a black flash.
+let lastW = 0, lastH = 0, lastDpr = 0;
 function resize() {
   const wrap = canvas.parentElement;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (w === lastW && h === lastH && dpr === lastDpr) return false;
+  lastW = w; lastH = h; lastDpr = dpr;
   view.W = w; view.H = h;
   canvas.width = w * dpr; canvas.height = h * dpr;
   canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
   renderer.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return true;
 }
 let resizeTimer = null;
 window.addEventListener('resize', () => {
-  resize();
+  if (!resize()) return;                 // size unchanged (e.g. mobile scroll) → no repaint
+  requestFrame();                        // blit cached layer at once (avoids a blank frame)
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => { if (renderer.grid) invalidateField(); }, 120);
 });
