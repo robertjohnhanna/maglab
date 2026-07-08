@@ -73,7 +73,7 @@ function draw() {
   drawLegend();
 }
 function requestDraw() { requestFrame(); }
-function invalidateField() { gridDirty = true; updateForceTile(); requestFrame(); }
+function invalidateField() { gridDirty = true; updateForceTile(); updateWorkTile(); requestFrame(); }
 function invalidateLayers() { layersDirty = true; requestFrame(); }
 
 // ---- probe overlay -----------------------------------------------------
@@ -94,11 +94,65 @@ function drawProbe() {
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(s[0], s[1], 9, 0, 7); ctx.stroke();
   ctx.beginPath(); ctx.arc(s[0], s[1], 2.5, 0, 7); ctx.fill();
+  // test-work cycle loop (dashed) — the closed path the "Continuous work" tile
+  // integrates the magnetic force around
+  const rpx = workLoopRadius() * view.scale;
+  ctx.save();
+  ctx.setLineDash([5, 4]); ctx.lineWidth = 1.3; ctx.strokeStyle = 'rgba(255,210,74,0.6)';
+  ctx.beginPath(); ctx.arc(s[0], s[1], rpx, 0, 7); ctx.stroke();
+  ctx.restore();
   const u = UNITS[fieldUnit], dp = Math.abs(mag * u) >= 100 ? 0 : 1;
   document.getElementById('probeReadout').innerHTML =
     `<div><b>|B|</b> ${fmtField(mag)}</div>` +
     `<div>${(B[0] * u).toFixed(dp)}, ${(B[1] * u).toFixed(dp)}, ${(B[2] * u).toFixed(dp)} ${fieldUnit}</div>` +
     `<div>in-pl ${fmtField(Math.hypot(comp.u, comp.v))} · out ${fmtField(comp.n)}</div>`;
+}
+
+// ---- continuous-work (perpetual-motion) check --------------------------
+// Carry a small test magnet once around a closed loop centred on the probe and
+// sum the work done by the magnetic force, W = ∮ F·dl.  The magnetostatic force
+// on a magnet is conservative — F = ∇(m·B) = −∇U — so for ANY static
+// arrangement this integral is exactly zero: energy can be extracted once (a
+// magnet snapping in) but the return stroke costs the same, netting nothing per
+// cycle.  A genuine "free energy" layout would make this nonzero; here any
+// residual is just numerical.  We model the test object as a small magnet that
+// freely aligns with B (best case for extraction): U = −m·|B|, F = m·∇|B|.
+const WORK_R_FRAC = 0.13;         // loop radius as a fraction of the view span
+const TEST_M = 0.13;              // test moment [A·m²] ≈ a 5 mm N42 magnet
+function workLoopRadius() { return Math.max(1e-4, view.spanU * WORK_R_FRAC); }
+function computeCycleWork() {
+  if (!probe || !scene.sources.length) return null;
+  const N = 128, R = workLoopRadius();
+  const uA = view.uAxis, vA = view.vAxis;
+  const h = Math.max(1e-6, R * 1e-3);
+  const bmag = (q) => P.vlen(scene.B(q));
+  const at = (th) => { const q = probe.slice(); q[uA] = probe[uA] + R * Math.cos(th); q[vA] = probe[vA] + R * Math.sin(th); return q; };
+  let W = 0, bMin = Infinity, bMax = -Infinity, prev = at(0);
+  for (let i = 1; i <= N; i++) {
+    const cur = at(2 * Math.PI * i / N);
+    const mid = [(prev[0] + cur[0]) / 2, (prev[1] + cur[1]) / 2, (prev[2] + cur[2]) / 2];
+    // force component (in plane) = m·∇|B| at the segment midpoint
+    for (const ax of [uA, vA]) {
+      const a = mid.slice(), b = mid.slice(); a[ax] += h; b[ax] -= h;
+      const F = TEST_M * (bmag(a) - bmag(b)) / (2 * h);
+      W += F * (cur[ax] - prev[ax]);
+    }
+    const bc = bmag(cur); if (bc < bMin) bMin = bc; if (bc > bMax) bMax = bc;
+    prev = cur;
+  }
+  const dU = TEST_M * (bMax - bMin);      // one-stroke energy available
+  return { W, dU, R };
+}
+function updateWorkTile() {
+  const el = document.getElementById('workReadout');
+  const r = computeCycleWork();
+  if (!r) { el.textContent = 'Add sources; drag the ⊕ pin'; return; }
+  const ratio = r.dU > 0 ? Math.abs(r.W) / r.dU : 0;
+  const verdict = ratio < 5e-3 ? 'balanced — no free energy' : 'residual (numerical)';
+  el.innerHTML =
+    `<div><b>Cycle</b> ∮F·dl ${r.W.toExponential(2)} J</div>` +
+    `<div><b>1-stroke</b> ΔU ${r.dU.toExponential(2)} J</div>` +
+    `<div>net/stroke ${ratio.toExponential(1)} · ${verdict}</div>`;
 }
 
 // ---- legend ------------------------------------------------------------
@@ -459,7 +513,7 @@ canvas.addEventListener('pointermove', (e) => {
     invalidateField(); return;
   }
   if (dragMode === 'probe') {
-    probe = view.toWorld(sx, sy); requestDraw();
+    probe = view.toWorld(sx, sy); updateWorkTile(); requestDraw();
   } else if (dragMode === 'pan') {
     view.center[0] = dragStart[2] - (sx - dragStart[0]) / view.scale;
     view.center[1] = dragStart[3] + (sy - dragStart[1]) / view.scale;

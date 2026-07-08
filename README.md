@@ -48,6 +48,7 @@ Full derivations, formulas and references: **[docs/PHYSICS.md](docs/PHYSICS.md)*
 | Slice control | view the XZ / XY / YZ plane at any offset through the 3-D scene |
 | Field probe | drag the ⊕ pin to read the full 3-D **B** vector, in T / mT / µT / G / mG |
 | Force & torque | dipole-model net force and torque on the selected body |
+| Continuous-work check | carries a test magnet once around a closed loop (drawn around the probe) and reports the net cyclic work ∮F·dl — ≈ 0 for any static arrangement (magnetostatics is conservative — no perpetual motion), shown against the one-time energy available |
 | Particle lab | launch electrons or protons at a chosen speed; real-time, adaptive Boris integration; live speed, kinetic energy and force readout |
 | Scenarios | one-click presets: two magnets, solenoid, Helmholtz coils, horseshoe, wire + compass field, cyclotron orbit |
 

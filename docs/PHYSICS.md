@@ -105,6 +105,30 @@ with the magnetic moment m = (Br/μ₀)·V for a magnet, or I·N·A for a coil. 
 **exact for well-separated bodies** and an approximation when two magnets nearly
 touch (where higher multipoles matter). The gradient is taken numerically.
 
+## Continuous work & conservation of energy
+
+A magnet in a static field has potential energy U = −**m**·**B**, and the force
+on it is F = ∇(**m**·**B**) = −∇U — a *conservative* field. The net work done
+over any closed path is therefore
+
+```
+W_cycle = ∮ F·dl = −∮ ∇U·dl = 0
+```
+
+exactly, for every static arrangement of magnets and steady currents. You can
+extract energy *once* (two magnets snapping together releases ΔU), but restoring
+the configuration costs the same ΔU, so there is **no net continuous work** — no
+magnetostatic "free energy" or perpetual motion.
+
+The **Continuous work** tile makes this measurable: it carries a small test
+magnet (modelled as freely aligning with **B**, the best case for extraction,
+U = −m|B|) once around a closed loop centred on the probe and numerically sums
+∮F·dl. The result is ~0 to numerical precision, displayed next to the one-stroke
+energy ΔU = m·(|B|max − |B|min) for contrast. A layout that produced net cyclic
+work would show a nonzero integral here; none can, because the field is a
+gradient. (Continuous power is only possible with *time-varying* fields —
+induction/generators — which take in as much work as they deliver.)
+
 ## Charged-particle dynamics — Boris pusher
 
 Particles move under the full Lorentz force **F = q(E + v×B)**. Integration uses
