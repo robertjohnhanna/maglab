@@ -156,6 +156,11 @@ function viridisCss(t) { const c = viridis(t); return `rgb(${c[0]|0},${c[1]|0},$
 // ---- particle simulation ----------------------------------------------
 let simDt = 5e-11;          // s per step
 let stepsPerFrame = 40;
+let timeRate = 1;           // playback time-rate multiplier (rate slider)
+// Show/hide the Play↔Pause label and the rate slider (shown only while running).
+function setRateVisible() {
+  document.getElementById('rateRow').style.display = simRunning ? 'flex' : 'none';
+}
 function drawParticles() {
   const ctx = renderer.ctx;
   for (const p of particles) {
@@ -173,7 +178,7 @@ function drawParticles() {
 }
 function simStep() {
   const fieldFn = (x) => scene.EB(x);
-  const frameTime = simDt * stepsPerFrame;         // sim-seconds advanced per frame
+  const frameTime = simDt * stepsPerFrame * timeRate;   // sim-seconds advanced per frame (rate-scaled)
   const trailGap = view.spanU * 0.004;
   const cw = view.worldFromUV(view.center[0], view.center[1]);  // cull relative to the view, not the origin
   for (const p of particles) {
@@ -204,6 +209,7 @@ function simStep() {
 function startSim() {
   document.getElementById('pauseSim').textContent = 'Pause';
   if (!simRunning) { simRunning = true; requestFrame(); }
+  setRateVisible();
 }
 function updateParticleReadout() {
   const p = particles[particles.length - 1];
@@ -579,7 +585,7 @@ document.getElementById('clearAll').addEventListener('click', () => {
   scene.sources = []; selectedId = null; particles.length = 0; simRunning = false;
   document.getElementById('pauseSim').textContent = 'Pause';
   document.getElementById('partReadout').textContent = 'Launch a particle';
-  buildList(); buildInspector(); invalidateField();
+  setRateVisible(); buildList(); buildInspector(); invalidateField();
 });
 
 // Hit-test in screen space: a click anywhere within an object's projected
@@ -613,11 +619,25 @@ document.getElementById('launch').addEventListener('click', launchParticle);
 document.getElementById('clearParts').addEventListener('click', () => {
   particles.length = 0; simRunning = false;
   document.getElementById('pauseSim').textContent = 'Pause';
-  document.getElementById('partReadout').textContent = 'Launch a particle'; requestDraw();
+  document.getElementById('partReadout').textContent = 'Launch a particle'; setRateVisible(); requestDraw();
 });
 document.getElementById('pauseSim').addEventListener('click', (e) => {
   simRunning = !simRunning; e.target.textContent = simRunning ? 'Pause' : 'Resume';
+  setRateVisible();
   if (simRunning) requestFrame();
+});
+// Launch-speed bar: keep the slider and the number box in sync.
+{
+  const rng = document.getElementById('pSpeedRange'), num = document.getElementById('pSpeed');
+  rng.addEventListener('input', () => { num.value = rng.value; });
+  num.addEventListener('input', () => { const n = parseFloat(num.value); if (!isNaN(n)) rng.value = n; });
+}
+// Playback time-rate slider (log scale, 0.05×…20×, 1× centred), shown while running.
+const rateSlider = document.getElementById('rateSlider');
+rateSlider.addEventListener('input', () => {
+  timeRate = 0.05 * Math.pow(400, parseFloat(rateSlider.value) / 100);
+  const txt = timeRate < 1 ? timeRate.toFixed(2) : timeRate < 10 ? timeRate.toFixed(1) : timeRate.toFixed(0);
+  document.getElementById('rateVal').textContent = txt + '×';
 });
 
 // ---- presets / scenarios ----------------------------------------------
@@ -670,6 +690,7 @@ presetSel.addEventListener('change', () => {
   if (!presets[presetSel.value]) return;
   particles.length = 0; simRunning = false;
   document.getElementById('pauseSim').textContent = 'Pause';
+  setRateVisible();
   presets[presetSel.value]();
   scene.rebuild(); selectedId = scene.sources[0] ? scene.sources[0].id : null;
   presetSel.value = ''; buildList(); buildInspector(); invalidateField();

@@ -40,12 +40,22 @@
       <h2>Particle</h2>
       <div class="prow">
         <select id="pType"><option value="electron">e⁻</option><option value="proton">p⁺</option></select>
-        <label>Speed <input id="pSpeed" type="number" value="3000000" step="1e5" style="width:92px"> <span class="lc">m/s</span></label>
+      </div>
+      <div class="prow">
+        <span class="lc">Speed</span>
+        <input id="pSpeedRange" type="range" min="100000" max="30000000" step="100000" value="3000000" style="flex:1;min-width:52px;accent-color:var(--accent)">
+        <input id="pSpeed" type="number" value="3000000" step="1e5" style="width:82px">
+        <span class="lc">m/s</span>
       </div>
       <div class="prow">
         <button id="launch" class="primary">Launch</button>
         <button id="pauseSim">Pause</button>
         <button id="clearParts">Clear</button>
+      </div>
+      <div class="prow" id="rateRow" style="display:none">
+        <span class="lc">Rate</span>
+        <input id="rateSlider" type="range" min="0" max="100" value="50" style="flex:1;min-width:52px;accent-color:var(--accent)">
+        <span id="rateVal" class="lc" style="width:42px;text-align:right">1.0×</span>
       </div>
     </section>
     <section>
