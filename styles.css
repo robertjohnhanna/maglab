@@ -8,6 +8,9 @@ html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg); color: var(--txt); font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden;
+  /* Kill the double-tap-to-zoom gesture (and its ~300ms tap delay) on the UI
+     chrome, but keep pinch-to-zoom so the interface stays accessible. */
+  touch-action: manipulation;
 }
 /* Uppercase the UI chrome only — NOT data readouts or unit strings, where case
    is meaningful (mT vs MT, µT, keV, N·m …). */
