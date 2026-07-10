@@ -88,8 +88,12 @@ export function cuboidFieldZ(p, half, Jz) {
         const Z = z - (2 * k - 1) * c;
         const R = Math.hypot(X, Y, Z) || 1e-30;
         const s = ((i + j + k) & 1) ? -1 : 1;
-        Bx += s * Math.log(R + Y);
-        By += s * Math.log(R + X);
+        // R+Y (or R+X) is exactly 0 on an edge line and its extension, where
+        // log would return ±Infinity (and the sum NaN); floor the argument so
+        // those measure-zero points stay finite — paired corner terms with
+        // opposite sign then cancel instead of producing NaN.
+        Bx += s * Math.log(Math.max(R + Y, 1e-30));
+        By += s * Math.log(Math.max(R + X, 1e-30));
         Bz -= s * Math.atan2(X * Y, Z * R);
       }
     }

@@ -1,7 +1,7 @@
 // main.js — app glue: scene management, UI panels, interaction, particle sim.
 import * as P from './physics.js';
 import { Scene, defaultSource, buildSource, sourceExtent, bodyContains, MATERIALS } from './sources.js';
-import { Renderer, View } from './render.js';
+import { Renderer, View, viridis } from './render.js';
 
 const scene = new Scene();
 const view = new View();
@@ -67,11 +67,14 @@ window.addEventListener('resize', () => {
 // and draws lightweight overlays (sources, particles, probe).
 // A single coalescing rAF loop: many invalidations within one frame collapse to
 // at most one field recompute, so dragging/zooming stay smooth.
-let gridDirty = false, layersDirty = false, frameQueued = false;
+let gridDirty = false, layersDirty = false, frameQueued = false, forceDirty = false;
 function tick() {
   frameQueued = false;
   if (gridDirty) { renderer.computeGrid(); renderer.renderField(); gridDirty = layersDirty = false; }
   else if (layersDirty) { renderer.renderField(); layersDirty = false; }
+  // the force/torque integral is expensive (multi-coil scenes: ~10s of ms), so
+  // it is coalesced here like the grid — at most once per frame, never per event
+  if (forceDirty) { forceDirty = false; updateForceTile(); }
   if (simRunning) simStep();
   draw();
   if (simRunning) requestFrame();   // keep animating while the sim runs
@@ -86,7 +89,7 @@ function draw() {
   drawLegend();
 }
 function requestDraw() { requestFrame(); }
-function invalidateField() { gridDirty = true; updateForceTile(); requestFrame(); }
+function invalidateField() { gridDirty = true; forceDirty = true; requestFrame(); }
 function invalidateLayers() { layersDirty = true; requestFrame(); }
 
 // ---- probe overlay -----------------------------------------------------
@@ -151,7 +154,6 @@ function drawLegend() {
   ctx.fillText(fmtFieldShort(Math.pow(10, renderer.range.max)) + ' ' + fieldUnit, x + w, gy + h + 2);
 }
 function fmtFieldShort(t) { const v = t * UNITS[fieldUnit]; return v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toPrecision(2); }
-import { viridis } from './render.js';
 function viridisCss(t) { const c = viridis(t); return `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`; }
 
 // ---- particle simulation ----------------------------------------------
@@ -201,7 +203,9 @@ function simStep() {
       // (The magnet is a fixed lab object, so it takes the momentum without
       // visibly recoiling.)
       if (scene.sources.some((s) => s.visible && bodyContains(s, p.x))) { p.alive = false; p.hit = true; break; }
-      if (P.vlen(P.vsub(p.x, cw)) > view.spanU * 6) { p.alive = false; break; }
+      // cull once well outside the view — but never tighter than the radius at
+      // launch, so zooming IN doesn't retroactively kill live distant particles
+      if (P.vlen(P.vsub(p.x, cw)) > Math.max(view.spanU * 6, p.cullR || 0)) { p.alive = false; break; }
     }
     if (p.trail.length > 6000) p.trail.splice(0, p.trail.length - 6000);
   }
@@ -300,14 +304,27 @@ function buildInspector() {
     row.innerHTML = m ? `<span>${m[1]} <span class="lc">(${m[2]})</span></span>` : `<span>${label}</span>`;
     const input = document.createElement('input');
     input.type = 'number'; input.value = val; input.step = step; input.min = min; input.max = max;
+    // HTML min/max don't stop typed values, so clamp before the value reaches
+    // the physics (a typed negative size would corrupt fields and hit-boxes)
+    const clamp = (n) => Math.min(max, Math.max(min, n));
     input.addEventListener('input', () => {
       let n = parseFloat(input.value); if (isNaN(n)) return;
-      setPath(s, path, n); buildSource(s); invalidateField();
+      if (min !== undefined) n = clamp(n);
+      setPath(s, path, n); if (path === 'Br') syncMaterialSel(s);
+      buildSource(s); invalidateField();
+    });
+    input.addEventListener('change', () => {   // snap the box to the applied value on blur
+      const n = parseFloat(input.value);
+      if (!isNaN(n) && min !== undefined && clamp(n) !== n) input.value = clamp(n);
     });
     if (min !== undefined) {
       const rng = document.createElement('input');
       rng.type = 'range'; rng.min = min; rng.max = max; rng.step = step; rng.value = val;
-      rng.addEventListener('input', () => { setPath(s, path, parseFloat(rng.value)); input.value = rng.value; buildSource(s); invalidateField(); });
+      rng.addEventListener('input', () => {
+        setPath(s, path, parseFloat(rng.value)); input.value = rng.value;
+        if (path === 'Br') syncMaterialSel(s);
+        buildSource(s); invalidateField();
+      });
       input.addEventListener('input', () => { rng.value = input.value; });
       row.appendChild(input); row.appendChild(rng);
     } else { row.appendChild(input); }
@@ -320,8 +337,11 @@ function buildInspector() {
       row.innerHTML = `<span>${def[0]}</span>`;
       const sel = document.createElement('select'); sel.id = 'matSel';
       for (const name of Object.keys(MATERIALS)) sel.innerHTML += `<option value="${MATERIALS[name]}">${name}</option>`;
-      sel.value = String(nearestMaterial(s.Br));
-      sel.addEventListener('change', () => { s.Br = parseFloat(sel.value); buildSource(s); buildInspector(); invalidateField(); });
+      syncMaterialSel(s, sel);
+      sel.addEventListener('change', () => {
+        if (sel.value === '') return;                       // the "Custom" placeholder
+        s.Br = parseFloat(sel.value); buildSource(s); buildInspector(); invalidateField();
+      });
       row.appendChild(sel); el.appendChild(row);
       continue;
     }
@@ -341,7 +361,7 @@ function buildInspector() {
 function fmtMag(x, unit) {
   const a = Math.abs(x);
   if (a === 0) return `0 ${unit}`;
-  const p = [[1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'], [1e-18, 'a']];
+  const p = [[1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'], [1e-18, 'a']];
   for (const [scale, pre] of p) { if (a >= scale || scale === 1e-18) { const v = x / scale; return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${pre}${unit}`; } }
 }
 // 8-way in-plane direction arrow; ⊙/⊗ when the vector points out of / into the view plane
@@ -368,10 +388,21 @@ function updateForceTile() {
     `<div><b>F</b> ${fZero ? '≈ 0 N' : fmtMag(Fm, 'N') + ' ' + dirArrow(ft.F)}</div>` +
     `<div><b>τ</b> ${tZero ? '≈ 0 N·m' : fmtMag(tauM, 'N·m')}</div>`;
 }
-function nearestMaterial(Br) {
-  let best = 1.30, bd = 1e9;
-  for (const v of Object.values(MATERIALS)) { const d = Math.abs(v - Br); if (d < bd) { bd = d; best = v; } }
-  return best;
+// Keep the material select honest: show the matching grade when Br equals one,
+// otherwise an explicit "Custom (…)" entry instead of silently naming the
+// nearest material.
+function syncMaterialSel(s, sel = document.getElementById('matSel')) {
+  if (!sel) return;
+  const hit = Object.values(MATERIALS).find((v) => Math.abs(v - s.Br) < 1e-9);
+  let custom = sel.querySelector('option[value=""]');
+  if (hit !== undefined) {
+    if (custom) custom.remove();
+    sel.value = String(hit);
+  } else {
+    if (!custom) { custom = document.createElement('option'); custom.value = ''; sel.prepend(custom); }
+    custom.textContent = `Custom (${+s.Br.toFixed(3)} T)`;
+    sel.value = '';
+  }
 }
 
 function buildList() {
@@ -595,10 +626,26 @@ document.getElementById('clearAll').addEventListener('click', () => {
 
 // Hit-test in screen space: a click anywhere within an object's projected
 // footprint selects it (min 14 px so tiny objects stay grabbable). Front-most
-// (last-added) object wins.
+// (last-added) object wins. Elongated sources (wire / coil / cylinder) test
+// distance to their projected axis, not a bounding circle — so empty space
+// beside a long wire still pans instead of grabbing the wire.
+function distToSeg(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / L2)) : 0;
+  return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+}
 function pickSource(sx, sy) {
   for (let i = scene.sources.length - 1; i >= 0; i--) {
     const s = scene.sources[i]; if (!s.visible) continue;
+    if (s.type === 'wire' || s.type === 'coil' || s.type === 'cylinder') {
+      const h = s.len / 2000;                              // half-length, mm -> m
+      const a = view.toScreen(P.vadd(s._origin, P.matVec(s._R, [0, 0, -h])));
+      const b = view.toScreen(P.vadd(s._origin, P.matVec(s._R, [0, 0, h])));
+      const rad = Math.max(14, (s.dia ? s.dia / 2000 * view.scale : 0) + 4);
+      if (distToSeg(sx, sy, a, b) < rad) return s;
+      continue;
+    }
     const p = view.toScreen(s._origin);
     const r = Math.max(14, sourceExtent(s) * view.scale);
     if (Math.hypot(p[0] - sx, p[1] - sy) < r) return s;
@@ -609,15 +656,28 @@ function pickSource(sx, sy) {
 // ---- particle panel ----------------------------------------------------
 // Launch from the field-probe pin, along the amber aim arrow (which stays where
 // the user turned it). Falls back to the left of the view when the probe is unset.
+const SPEED_MIN = 1e5, SPEED_MAX = 3e7;    // slider range; max ≈ 10% c, the
+                                           // non-relativistic integrator's limit
 function launchParticle() {
   const type = document.getElementById('pType').value;
   const q = type === 'proton' ? P.QE : -P.QE;
   const mass = type === 'proton' ? P.MP : P.ME;
-  const speed = Math.abs(parseFloat(document.getElementById('pSpeed').value)) || 3e6;
+  // clamp typed speeds — the number box accepts anything, the physics doesn't
+  const num = document.getElementById('pSpeed');
+  let speed = Math.abs(parseFloat(num.value));
+  speed = isFinite(speed) && speed > 0 ? Math.min(SPEED_MAX, Math.max(SPEED_MIN, speed)) : 3e6;
+  num.value = speed; document.getElementById('pSpeedRange').value = speed;
   const pos = probe ? probe.slice() : view.worldFromUV(view.center[0] - view.spanU * 0.4, view.center[1]);
   const dir = [0, 0, 0]; dir[view.uAxis] = aimDir[0]; dir[view.vAxis] = aimDir[1];
   const vel = dir.map((c) => c * speed);
-  particles.push({ x: pos, v: vel, q, mass, trail: [pos.slice()], color: q < 0 ? '#4aa3ff' : '#ff7a4a', alive: true });
+  // bound the roster so old trails don't accumulate forever: drop the oldest
+  // dead particle first, or the oldest outright if all are still alive
+  if (particles.length >= 24) {
+    const i = particles.findIndex((p) => !p.alive);
+    particles.splice(i >= 0 ? i : 0, 1);
+  }
+  particles.push({ x: pos, v: vel, q, mass, trail: [pos.slice()], color: q < 0 ? '#4aa3ff' : '#ff7a4a',
+                   alive: true, cullR: view.spanU * 6 });
   startSim();
 }
 document.getElementById('launch').addEventListener('click', launchParticle);

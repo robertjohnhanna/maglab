@@ -35,7 +35,7 @@ export function defaultSource(type) {
     case 'loop':     return { ...base, name: 'Current loop',  dia: 20, current: 10 };
     case 'wire':     return { ...base, name: 'Straight wire', len: 60, current: 20 };
     case 'dipole':   return { ...base, name: 'Dipole',        moment: 0.05 };
-    case 'charge':   return { ...base, name: 'Moving charge', q: -1, vel: [0, 0, 1e6], speedScale: 1 };
+    case 'charge':   return { ...base, name: 'Moving charge', q: -1, vel: [0, 0, 1e6] };
     default: throw new Error('unknown source type ' + type);
   }
 }
@@ -117,7 +117,7 @@ export function sourceField(s, Q) {
     const m = P.matVec(s._R, [0, 0, s.moment]); // moment along local +z
     B = P.dipoleField(m, s._origin, Q);
   } else if (s.type === 'charge') {
-    const vel = P.matVec(s._R, s.vel.map((c) => c * (s.speedScale || 1)));
+    const vel = P.matVec(s._R, s.vel);
     const q = s.q * P.QE;
     const f = P.movingChargeField(q, s._origin, vel, Q);
     B = f.B; E = f.E;
@@ -217,11 +217,42 @@ function bodiesOverlap(sa, sb) {
   return true;
 }
 
+// True if any current filament of `others` passes through the solid magnetised
+// body of s (a wire or coil turn threading a magnet). Sampled at 17 points per
+// segment / 16 per loop turn — plenty at these geometries, and cheap.
+function filamentThreads(others, s) {
+  if (s.type !== 'magnet' && s.type !== 'sphere' && s.type !== 'cylinder') return false;
+  for (const o of others) {
+    if (o._segments) {
+      for (const seg of o._segments) {
+        const [A, B] = seg.pts;
+        for (let k = 0; k <= 16; k++) {
+          const t = k / 16;
+          if (bodyContains(s, [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t])) return true;
+        }
+      }
+    }
+    if (o._loops) {
+      for (const lp of o._loops) {
+        for (let k = 0; k < 16; k++) {
+          const t = 2 * Math.PI * k / 16;
+          if (bodyContains(s, P.vadd(o._origin, P.matVec(o._R, [o._loopR * Math.cos(t), o._loopR * Math.sin(t), lp.z])))) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 export function forceOn(scene, target) {
   const others = scene.sources.filter((s) => s !== target && s.visible);
   if (!others.length) return { F: [0, 0, 0], tau: [0, 0, 0], valid: true, hasExternal: false };
   // interpenetrating bodies → force is undefined; refuse rather than report garbage
   for (const o of others) if (bodiesOverlap(target, o)) return { F: [0, 0, 0], tau: [0, 0, 0], valid: false, hasExternal: true };
+  // Likewise a current filament (wire / loop / coil turn) threading the target's
+  // solid body: the surface-charge integral is ill-defined with free current
+  // inside the magnetised volume, so refuse that too.
+  if (filamentThreads(others, target)) return { F: [0, 0, 0], tau: [0, 0, 0], valid: false, hasExternal: true };
   const c = target._origin, R = target._R;
   const Bext = (q) => { let b = [0, 0, 0]; for (const s of others) b = P.vadd(b, sourceField(s, q).B); return b; };
   const Eext = (q) => { let e = [0, 0, 0]; for (const s of others) e = P.vadd(e, sourceField(s, q).E); return e; };
@@ -305,7 +336,7 @@ export function forceOn(scene, target) {
     Fabs = P.vlen(F); tauAbs = P.vlen(tau);   // direct values, not summed
     if (inOther(c)) valid = false;
   } else if (target.type === 'charge') {
-    const q = target.q * P.QE, vel = P.matVec(R, target.vel.map((v) => v * (target.speedScale || 1)));
+    const q = target.q * P.QE, vel = P.matVec(R, target.vel);
     F = P.vscale(P.vadd(Eext(c), P.vcross(vel, Bext(c))), q);
     Fabs = P.vlen(F);
   }
@@ -334,8 +365,9 @@ export function momentOf(s) {
     return P.matVec(s._R, [0, 0, s.current * Math.PI * r * r]);
   }
   if (s.type === 'coil') {
+    // include the core factor — the field model scales the loop currents by it
     const r = mm(s.dia) / 2;
-    return P.matVec(s._R, [0, 0, s.current * s.turns * Math.PI * r * r]);
+    return P.matVec(s._R, [0, 0, s.current * s.turns * (s.core || 1) * Math.PI * r * r]);
   }
   return null;
 }

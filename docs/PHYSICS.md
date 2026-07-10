@@ -98,7 +98,10 @@ The net force and torque on the selected body from all *other* sources is
 computed by integrating the **actual** force density over the body, using
 B_ext (the field of the other sources only) — never the point-dipole/far-field
 approximation. It is valid at any separation, including nearly-touching magnets,
-as long as the bodies don't interpenetrate.
+as long as the bodies don't interpenetrate. When they do — or when a current
+filament (wire or coil turn) threads a solid magnet body, which makes the
+surface-charge integral ill-defined — the app refuses to report a force rather
+than show garbage.
 
 - **Currents (coil / loop / wire):** the Lorentz force on the conductor,
   F = ∮ I dl × B_ext, integrated along the wire.

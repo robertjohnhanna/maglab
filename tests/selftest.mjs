@@ -2,7 +2,7 @@
 // analytically-known limits and Maxwell constraints (∇·B=0, ∇×B=0 in free space).
 import {
   MU0, cuboidFieldZ, cuboidFieldLocal, segmentField, polylineField,
-  circularLoopField, dipoleField, borisStep, vadd, vsub, vscale, vlen, vcross,
+  circularLoopField, dipoleField, borisStep, vsub, vlen,
 } from '../src/physics.js';
 import { Scene, defaultSource, forceOn, momentOf } from '../src/sources.js';
 
@@ -204,6 +204,25 @@ console.log('\n== Exact force / torque ==');
   const fPar = mkLoops(10), fAnti = mkLoops(-10);
   check('parallel co-current loops attract', fPar.F[2] < 0, fPar.F.toString());
   check('anti-parallel current loops repel', fAnti.F[2] > 0, fAnti.F.toString());
+}
+
+console.log('\n== Numerical robustness ==');
+{
+  // The log terms of the cuboid formula are singular exactly on a magnet edge
+  // line and its infinite extension; both must stay finite (no Infinity/NaN).
+  const half = [0.005, 0.005, 0.01], J = 1.3;
+  const ext = cuboidFieldZ([0.005, -0.02, 0.01], half, J);   // edge-line extension
+  check('finite on edge-line extension', ext.every(Number.isFinite), ext.toString());
+  const edge = cuboidFieldZ([0.005, 0, 0.01], half, J);      // exactly on an edge
+  check('finite on the edge itself', edge.every(Number.isFinite), edge.toString());
+
+  // A wire threading a magnet body makes the surface-charge force integral
+  // ill-defined — it must be refused, from both bodies' perspectives.
+  const th = new Scene();
+  const mg = defaultSource('magnet'); th.add(mg);            // 10x10x20 mm at origin
+  const w = defaultSource('wire'); w.len = 60; th.add(w);    // along z through it
+  check('wire threading a magnet → force refused', forceOn(th, mg).valid === false, '');
+  check('…and refused for the wire too', forceOn(th, w).valid === false, '');
 }
 
 console.log('\n== Boris pusher (charged particle) ==');

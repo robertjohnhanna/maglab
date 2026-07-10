@@ -44,7 +44,7 @@
       <div class="prow">
         <span class="lc">Speed</span>
         <input id="pSpeedRange" type="range" min="100000" max="30000000" step="100000" value="3000000" style="flex:1;min-width:48px">
-        <input id="pSpeed" type="number" value="3000000" step="1e5" style="width:74px">
+        <input id="pSpeed" type="number" value="3000000" step="1e5" min="100000" max="30000000" style="width:74px">
         <span class="lc">m/s</span>
       </div>
       <div class="prow">
@@ -69,7 +69,7 @@
 
   <main>
     <div id="canvasWrap">
-      <canvas id="view"></canvas>
+      <canvas id="view" aria-label="Interactive magnetic field view: drag objects and the probe pin, pan and zoom"></canvas>
       <div id="zoomCtrl">
         <button id="zoomIn" title="Zoom in">＋</button>
         <button id="zoomOut" title="Zoom out">－</button>

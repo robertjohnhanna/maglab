@@ -104,9 +104,13 @@ export class Renderer {
     // world (u,v) -> grid fractional index
     const fx = (view.W / 2 + (u - view.center[0]) * view.scale) / view.W * g.cols - 0.5;
     const fy = (view.H / 2 - (v - view.center[1]) * view.scale) / view.H * g.rows - 0.5;
-    const x0 = Math.floor(fx), y0 = Math.floor(fy);
-    if (x0 < 0 || y0 < 0 || x0 >= g.cols - 1 || y0 >= g.rows - 1) return null;
-    const tx = fx - x0, ty = fy - y0;
+    if (fx < -0.5 || fy < -0.5 || fx > g.cols - 0.5 || fy > g.rows - 0.5) return null; // outside the view
+    // clamp the outer half-cell onto the edge samples so glyphs and streamlines
+    // reach the view border instead of stopping half a grid cell short
+    const cx = Math.min(Math.max(fx, 0), g.cols - 1.000001);
+    const cy = Math.min(Math.max(fy, 0), g.rows - 1.000001);
+    const x0 = Math.floor(cx), y0 = Math.floor(cy);
+    const tx = cx - x0, ty = cy - y0;
     const at = (xx, yy, arr) => arr[yy * g.cols + xx];
     const lerp2 = (arr) =>
       (at(x0, y0, arr) * (1 - tx) + at(x0 + 1, y0, arr) * tx) * (1 - ty) +
